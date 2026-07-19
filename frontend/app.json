@@ -7,7 +7,7 @@
     "icon": "./assets/icon.png",
     "scheme": "autoclipper",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "backgroundColor": "#0f0f0f",
       "resizeMode": "contain"
@@ -27,6 +27,12 @@
       "output": "single",
       "favicon": "./assets/favicon.png"
     },
-    "plugins": []
+    "plugins": [],
+    "extra": {
+      "eas": {
+        "projectId": "dd187527-50fa-4cc8-824f-43c4c75b2282"
+      }
+    },
+    "owner": "the_l"
   }
 }
