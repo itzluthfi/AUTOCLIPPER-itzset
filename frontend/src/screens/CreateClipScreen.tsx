@@ -1,10 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { submitVideo, checkCookieStatus, loadApiKey, API_BASE } from '../services/api';
-import { SkeletonLoader } from '../components/SkeletonLoader';
+
+function extractYouTubeId(text: string): string | null {
+  if (!text) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = text.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
 
 export default function CreateClipScreen({ navigation }: any) {
   const { colors, isDark } = useTheme();
@@ -13,6 +19,8 @@ export default function CreateClipScreen({ navigation }: any) {
   const [tracking, setTracking] = useState<'center' | 'face' | 'speaker'>('center');
   const [loading, setLoading] = useState(false);
   const [hasCookie, setHasCookie] = useState<boolean | null>(null);
+
+  const youtubeId = extractYouTubeId(url.trim());
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -43,8 +51,11 @@ export default function CreateClipScreen({ navigation }: any) {
     if (!hasCookie) {
       Alert.alert(
         'Cookie Belum Diset',
-        'Anda harus upload cookie YouTube terlebih dahulu sebelum bisa memproses video.\n\nKlik "Upload Cookie" di halaman Admin atau hubungi admin.',
-        [{ text: 'OK' }]
+        'Anda harus upload / paste cookie YouTube terlebih dahulu sebelum bisa memproses video.\n\nSilakan masuk ke menu Profil untuk mengeset cookie.',
+        [
+          { text: 'Buka Profil', onPress: () => navigation.navigate('Profile') },
+          { text: 'Batal', style: 'cancel' }
+        ]
       );
       return;
     }
@@ -143,7 +154,7 @@ export default function CreateClipScreen({ navigation }: any) {
           <TextInput
             value={url}
             onChangeText={setUrl}
-            placeholder="https://youtube.com/watch?v=..."
+            placeholder="https://youtube.com/watch?v=... atau Shorts"
             placeholderTextColor={colors.muted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -154,10 +165,51 @@ export default function CreateClipScreen({ navigation }: any) {
               color: colors.text, marginBottom: 8,
             }}
           />
+
+          {/* ─── LIVE INSTANT YOUTUBE PREVIEW CARD ─── */}
+          {youtubeId ? (
+            <View style={{
+              marginTop: 8, borderRadius: 10, overflow: 'hidden',
+              backgroundColor: isDark ? '#141414' : '#f1f5f9',
+              borderWidth: 1, borderColor: colors.primary + '60',
+            }}>
+              <View style={{ position: 'relative', height: 160, backgroundColor: '#000' }}>
+                <Image
+                  source={{ uri: `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` }}
+                  style={{ width: '100%', height: '100%', resizeMode: 'cover', opacity: 0.85 }}
+                />
+                <View style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                  justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.25)',
+                }}>
+                  <Ionicons name="play-circle" size={48} color="#FF0000" />
+                </View>
+                <View style={{
+                  position: 'absolute', top: 8, right: 8,
+                  backgroundColor: '#FF0000', paddingVertical: 4, paddingHorizontal: 8,
+                  borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 4,
+                }}>
+                  <Ionicons name="logo-youtube" size={12} color="#fff" />
+                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>YouTube</Text>
+                </View>
+              </View>
+              <View style={{ padding: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                  <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>
+                    Video Terdeteksi (ID: {youtubeId})
+                  </Text>
+                </View>
+                <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '500' }}>
+                  Siap Diproses
+                </Text>
+              </View>
+            </View>
+          ) : null}
         </View>
 
         {/* Mode Selector */}
-        <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 0, fontSize: 14 }}>
+        <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
           Mode Deteksi
         </Text>
         <View style={{
@@ -198,9 +250,9 @@ export default function CreateClipScreen({ navigation }: any) {
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
         }}>
           {[
-            { key: 'center' as const, label: 'Center', icon: 'crop' },
-            { key: 'face' as const, label: 'Face', icon: 'person' },
-            { key: 'speaker' as const, label: 'Speaker', icon: 'volume-high' },
+            { key: 'center' as const, label: 'Center', icon: 'square-outline', desc: 'Tengah' },
+            { key: 'face' as const, label: 'Face', icon: 'person-outline', desc: 'Lacak Wajah' },
+            { key: 'speaker' as const, label: 'Speaker', icon: 'mic-outline', desc: 'Pembicara' },
           ].map(t => (
             <TouchableOpacity
               key={t.key}
@@ -213,7 +265,7 @@ export default function CreateClipScreen({ navigation }: any) {
               }}
             >
               <Ionicons name={t.icon as any} size={18} color={tracking === t.key ? colors.primary : colors.muted} />
-              <Text style={{ color: tracking === t.key ? colors.primary : colors.text, fontSize: 12, marginTop: 4, fontWeight: '500' }}>
+              <Text style={{ fontWeight: '600', color: tracking === t.key ? colors.primary : colors.text, marginTop: 4, fontSize: 12 }}>
                 {t.label}
               </Text>
             </TouchableOpacity>
@@ -223,32 +275,18 @@ export default function CreateClipScreen({ navigation }: any) {
         {/* Submit Button */}
         <TouchableOpacity
           onPress={handleSubmit}
-          disabled={loading || hasCookie === false}
+          disabled={loading}
           style={{
-            paddingVertical: 14, borderRadius: 12, alignItems: 'center',
-            backgroundColor: (loading || hasCookie === false) ? colors.muted : colors.primary,
-            opacity: (loading || hasCookie === false) ? 0.6 : 1,
+            backgroundColor: loading ? colors.muted : colors.primary,
+            padding: 16, borderRadius: 12, alignItems: 'center',
+            shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
           }}
         >
-          {loading ? (
-            <Text style={{ color: '#fff', fontWeight: '600' }}>Memproses...</Text>
-          ) : (
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="rocket" size={18} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>
-                {hasCookie === false ? 'Upload Cookie Dulu' : 'Proses Video'}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* Info */}
-        {hasCookie === false && (
-          <Text style={{ color: colors.muted, fontSize: 11, textAlign: 'center', marginTop: 12 }}>
-            Tombol tidak aktif karena cookie YouTube belum diset.
-            {'\n'}Upload cookie di halaman Profile atau minta admin.
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
+            {loading ? 'Memproses Video...' : '🚀 Buat Short Clip Sekarang'}
           </Text>
-        )}
+        </TouchableOpacity>
 
       </Animated.View>
     </ScrollView>

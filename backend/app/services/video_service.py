@@ -50,10 +50,12 @@ async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[
         cmd.extend(["--cookies", cookie_path])
     cmd.append(youtube_url)
 
+    last_stderr = ""
     try:
         returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
+        last_stderr = stderr.decode(errors='ignore')
         if returncode != 0:
-            logger.error(f"yt-dlp failed: {stderr.decode(errors='ignore')}")
+            logger.error(f"yt-dlp failed: {last_stderr}")
             # Coba tanpa subtitle
             cmd = [
                 *get_ytdlp_cmd(),
@@ -65,16 +67,17 @@ async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[
             cmd.append(youtube_url)
             returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
             if returncode != 0:
-                logger.error(f"yt-dlp retry failed: {stderr.decode(errors='ignore')}")
-                return None
+                last_stderr = stderr.decode(errors='ignore')
+                logger.error(f"yt-dlp retry failed: {last_stderr}")
     except Exception as e:
         logger.error(f"yt-dlp error: {e}")
-        return None
+        last_stderr = str(e)
 
-    # Cari file video
-    for f in os.listdir(output_path):
-        if f.endswith((".mp4", ".mkv", ".webm")) and video_id in f:
-            return os.path.join(output_path, f)
+    # Cari file video yang berhasil terunduh di dalam folder output_path
+    if os.path.exists(output_path):
+        for f in os.listdir(output_path):
+            if f.endswith((".mp4", ".mkv", ".webm")):
+                return os.path.join(output_path, f)
 
     return None
 
