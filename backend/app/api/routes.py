@@ -396,7 +396,14 @@ async def download_clip(clip_id: int, user: User = Depends(get_current_user), db
         raise HTTPException(404, "Clip not found")
     if not clip.file_path or not os.path.exists(clip.file_path):
         raise HTTPException(404, "Clip file not ready")
-    return {"url": f"/api/clips/{clip_id}/file", "mime": "video/mp4"}
+
+    filename = f"clip_{clip_id}.mp4"
+    return FileResponse(
+        clip.file_path,
+        media_type="video/mp4",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
 @router.put("/clips/{clip_id}/edit")
 async def edit_clip(
