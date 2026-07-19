@@ -177,27 +177,35 @@ export default function ProfileScreen({ navigation }: any) {
                   </Text>
 
                   {/* Sub Tabs */}
-                  <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#222' : '#e2e8f0', borderRadius: 8, padding: 2, marginBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', backgroundColor: isDark ? '#222' : '#e2e8f0', borderRadius: 8, padding: 3, marginBottom: 12, gap: 4 }}>
                     <TouchableOpacity
                       onPress={() => setCookieMode('upload')}
                       style={{
-                        flex: 1, paddingVertical: 6, borderRadius: 6, alignItems: 'center',
+                        flex: 1, paddingVertical: 8, paddingHorizontal: 6, borderRadius: 6, alignItems: 'center', justifyContent: 'center',
                         backgroundColor: cookieMode === 'upload' ? colors.primary : 'transparent',
                       }}
                     >
-                      <Text style={{ color: cookieMode === 'upload' ? '#fff' : colors.text, fontSize: 12, fontWeight: '600' }}>
-                        📁 Upload File (.txt / .json)
+                      <Text
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        style={{ color: cookieMode === 'upload' ? '#fff' : colors.text, fontSize: 12, fontWeight: '600', textAlign: 'center' }}
+                      >
+                        📁 Upload File
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => setCookieMode('paste')}
                       style={{
-                        flex: 1, paddingVertical: 6, borderRadius: 6, alignItems: 'center',
+                        flex: 1, paddingVertical: 8, paddingHorizontal: 6, borderRadius: 6, alignItems: 'center', justifyContent: 'center',
                         backgroundColor: cookieMode === 'paste' ? colors.primary : 'transparent',
                       }}
                     >
-                      <Text style={{ color: cookieMode === 'paste' ? '#fff' : colors.text, fontSize: 12, fontWeight: '600' }}>
-                        📋 Tempel Teks (Paste)
+                      <Text
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        style={{ color: cookieMode === 'paste' ? '#fff' : colors.text, fontSize: 12, fontWeight: '600', textAlign: 'center' }}
+                      >
+                        📋 Paste Cookie
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -214,7 +222,7 @@ export default function ProfileScreen({ navigation }: any) {
                     >
                       {savingCookie && <ActivityIndicator color="#fff" size="small" />}
                       <Ionicons name="document-attach-outline" size={18} color="#fff" />
-                      <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>
+                      <Text numberOfLines={1} style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>
                         Pilih File cookies.txt / .json
                       </Text>
                     </TouchableOpacity>
