@@ -8,13 +8,13 @@ from typing import List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.models import User, Video, Clip, CreditTransaction
+from app.models.models import User, Video, Clip, CreditTransaction, SystemSetting, Order
 from app.services.video_service import download_video, get_video_info
 from app.services.ai_service import detect_highlights
 from app.workers.tasks import process_video
@@ -33,6 +33,8 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        api_key = request.query_params.get("key") or request.query_params.get("api_key")
     if not api_key:
         raise HTTPException(401, "API key required")
     hashed = hash_api_key(api_key)
@@ -104,6 +106,18 @@ async def submit_video(
 ):
     if user.credits < 1 and data.mode == "ai":
         raise HTTPException(402, "Insufficient credits")
+        
+    # Rate limiting: Maksimal 2 antrean video aktif per user
+    active_res = await db.execute(
+        select(func.count(Video.id)).where(
+            Video.user_id == user.id,
+            Video.status.in_(["pending", "downloading", "processing"])
+        )
+    )
+    active_count = active_res.scalar() or 0
+    if active_count >= 2:
+        raise HTTPException(429, "Anda memiliki terlalu banyak antrean video yang sedang diproses. Harap tunggu hingga selesai.")
+        
     try:
         info = await get_video_info(data.url)
     except Exception as e:
@@ -121,7 +135,30 @@ async def submit_video(
     db.add(video)
     await db.commit()
     await db.refresh(video)
-    process_video.delay(video.id, data.mode, data.tracking)
+    # Auto-detect if Redis is available, otherwise run in a local background thread
+    try:
+        import redis
+        r = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_timeout=1)
+        r.ping()
+        # Redis is available, queue via Celery
+        process_video.delay(video.id, video.youtube_url, user.id)
+        logger.info(f"Queued video {video.id} processing task in Celery/Redis.")
+    except Exception:
+        # Redis is down or not configured, run in local background thread
+        logger.info(f"Redis is unavailable. Running video {video.id} processing in a local background thread.")
+        import threading
+        class MockTask:
+            def update_state(self, state=None, meta=None):
+                pass
+        
+        def run_local_task():
+            try:
+                process_video(MockTask(), video.id, video.youtube_url, user.id)
+            except Exception as e:
+                logger.error(f"Local video processing thread failed: {e}")
+                
+        threading.Thread(target=run_local_task, daemon=True).start()
+
     return {"status": "queued", "video_id": video.id}
 
 @router.get("/videos")
@@ -164,6 +201,7 @@ async def get_video(video_id: int, user: User = Depends(get_current_user), db: A
             "method": c.method,
             "tracking": c.tracking_type,
             "status": c.status,
+            "is_featured": c.is_featured,
         } for c in video.clips],
     }
 
@@ -171,7 +209,83 @@ async def get_video(video_id: int, user: User = Depends(get_current_user), db: A
 async def health():
     return {"status": "ok", "version": "1.0.0"}
 
+@router.get("/clips/public/featured")
+async def get_featured_clips(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Clip).where(Clip.is_featured == True, Clip.status == "ready")
+    )
+    clips = result.scalars().all()
+    return [{
+        "id": c.id,
+        "title": c.title,
+        "start": c.start_time,
+        "end": c.end_time,
+        "url": f"/api/clips/{c.id}/file/public",
+    } for c in clips]
+
+@router.get("/clips/{clip_id}/file/public")
+async def get_public_clip_file(clip_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Clip).where(Clip.id == clip_id, Clip.is_featured == True)
+    )
+    clip = result.scalar_one_or_none()
+    if not clip:
+        raise HTTPException(404, "Clip not found or not public")
+    if not clip.file_path or not os.path.exists(clip.file_path):
+        raise HTTPException(404, "Clip file not ready")
+    return FileResponse(clip.file_path, media_type="video/mp4")
+
 # ─── Clip Endpoints ────────────────────────────────────────────
+
+@router.get("/clips/{clip_id}")
+async def get_clip(clip_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Clip).join(Video).where(Clip.id == clip_id, Video.user_id == user.id)
+    )
+    clip = result.scalar_one_or_none()
+    if not clip:
+        raise HTTPException(404, "Clip not found")
+    return {
+        "id": clip.id,
+        "video_id": clip.video_id,
+        "start": clip.start_time,
+        "end": clip.end_time,
+        "title": clip.title,
+        "subtitle": clip.reason,
+        "status": clip.status,
+    }
+
+@router.get("/clips/{clip_id}/file")
+async def get_clip_file(
+    clip_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(Clip).join(Video).where(Clip.id == clip_id, Video.user_id == user.id)
+    )
+    clip = result.scalar_one_or_none()
+    if not clip:
+        raise HTTPException(404, "Clip not found")
+    if not clip.file_path or not os.path.exists(clip.file_path):
+        raise HTTPException(404, "Clip file not ready")
+    return FileResponse(clip.file_path, media_type="video/mp4")
+
+@router.get("/clips/{clip_id}/thumbnail")
+async def get_clip_thumbnail(
+    clip_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(Clip).join(Video).where(Clip.id == clip_id, Video.user_id == user.id)
+    )
+    clip = result.scalar_one_or_none()
+    if not clip:
+        raise HTTPException(404, "Clip not found")
+    if not clip.thumbnail_path or not os.path.exists(clip.thumbnail_path):
+        raise HTTPException(404, "Thumbnail not ready")
+    return FileResponse(clip.thumbnail_path, media_type="image/jpeg")
 
 @router.get("/clips/{clip_id}/download")
 async def download_clip(clip_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -206,6 +320,8 @@ async def edit_clip(
         clip.end_time = float(data["end"])
     if "subtitle" in data:
         clip.reason = data.get("subtitle", clip.reason)
+    if "is_featured" in data:
+        clip.is_featured = bool(data["is_featured"])
     await db.commit()
     return {"status": "ok"}
 
@@ -466,3 +582,231 @@ async def admin_test_clip(
     await db.refresh(video)
     process_video.delay(video.id, data.mode, data.tracking)
     return {"status": "queued", "video_id": video.id, "note": "Admin test clip — cookie/credits bypassed"}
+
+async def get_setting(key: str, default: str, db: AsyncSession) -> str:
+    res = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
+    setting = res.scalar_one_or_none()
+    return setting.value if setting else default
+
+# ─── Public Settings Endpoint ──────────────────────────────────
+@router.get("/settings/public")
+async def get_public_settings(db: AsyncSession = Depends(get_db)):
+    pay_enabled = await get_setting("payment_enabled", "false", db)
+    client_key = await get_setting("midtrans_client_key", "", db)
+    return {
+        "payment_enabled": pay_enabled == "true",
+        "midtrans_client_key": client_key,
+    }
+
+# ─── Admin Settings Endpoints ──────────────────────────────────
+@router.get("/admin/settings")
+async def get_admin_settings(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(SystemSetting))
+    settings = res.scalars().all()
+    return {s.key: s.value for s in settings}
+
+@router.put("/admin/settings")
+async def update_admin_settings(data: dict, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    for k, v in data.items():
+        res = await db.execute(select(SystemSetting).where(SystemSetting.key == k))
+        setting = res.scalar_one_or_none()
+        if setting:
+            setting.value = str(v)
+        else:
+            db.add(SystemSetting(key=k, value=str(v)))
+    await db.commit()
+    return {"status": "ok"}
+
+# ─── Payments / Checkout Endpoint ──────────────────────────────
+class CheckoutRequest(BaseModel):
+    credits: int
+    amount: float
+
+@router.post("/payments/checkout")
+async def create_checkout(data: CheckoutRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    pay_enabled = await get_setting("payment_enabled", "false", db)
+    if pay_enabled != "true":
+        raise HTTPException(400, "Sistem pembayaran dinonaktifkan")
+        
+    server_key = await get_setting("midtrans_server_key", "", db)
+    is_prod = await get_setting("midtrans_is_production", "false", db)
+    
+    if not server_key:
+        raise HTTPException(500, "Midtrans Server Key belum diatur oleh admin")
+        
+    import uuid
+    import base64
+    order_id = f"order-{uuid.uuid4()}"
+    
+    order = Order(
+        id=order_id,
+        user_id=user.id,
+        credits=data.credits,
+        amount=data.amount,
+        status="pending"
+    )
+    db.add(order)
+    await db.commit()
+    
+    snap_url = "https://app.sandbox.midtrans.com/snap/v1/transactions"
+    if is_prod == "true":
+        snap_url = "https://app.midtrans.com/snap/v1/transactions"
+        
+    auth_str = base64.b64encode(f"{server_key}:".encode()).decode()
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Basic {auth_str}"
+    }
+    
+    payload = {
+        "transaction_details": {
+            "order_id": order_id,
+            "gross_amount": int(data.amount)
+        },
+        "credit_card": {
+            "secure": True
+        },
+        "customer_details": {
+            "first_name": user.name,
+            "email": user.email
+        }
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.post(snap_url, json=payload, headers=headers, timeout=10.0)
+            if resp.status_code != 201:
+                raise Exception(resp.text)
+            result = resp.json()
+            return {
+                "order_id": order_id,
+                "token": result.get("token"),
+                "redirect_url": result.get("redirect_url")
+            }
+        except Exception as e:
+            order.status = "failed"
+            await db.commit()
+            raise HTTPException(500, f"Gagal membuat transaksi ke Midtrans: {e}")
+
+# ─── Midtrans Notification Webhook ─────────────────────────────
+@router.post("/payments/midtrans/webhook")
+async def midtrans_webhook(data: dict, db: AsyncSession = Depends(get_db)):
+    order_id = data.get("order_id")
+    transaction_status = data.get("transaction_status")
+    fraud_status = data.get("fraud_status")
+    
+    if not order_id:
+        return {"status": "ignored", "reason": "No order_id"}
+        
+    res = await db.execute(select(Order).where(Order.id == order_id))
+    order = res.scalar_one_or_none()
+    if not order:
+        return {"status": "ignored", "reason": "Order not found"}
+        
+    if order.status == "pending":
+        is_success = False
+        if transaction_status in ["capture", "settlement"]:
+            if transaction_status == "capture" and fraud_status == "challenge":
+                pass
+            else:
+                is_success = True
+                
+        if is_success:
+            order.status = "settlement"
+            u_res = await db.execute(select(User).where(User.id == order.user_id))
+            user = u_res.scalar_one_or_none()
+            if user:
+                user.credits += order.credits
+                tx = CreditTransaction(
+                    user_id=user.id,
+                    amount=order.credits,
+                    type="purchase",
+                    description=f"Pembelian {order.credits} kredit via Midtrans ({order_id})"
+                )
+                db.add(tx)
+        elif transaction_status in ["deny", "expire", "cancel"]:
+            order.status = transaction_status
+            
+        await db.commit()
+        return {"status": "ok", "new_status": order.status}
+        
+    return {"status": "ignored", "reason": f"Order already in status: {order.status}"}
+
+# ─── App Google Login SSO ───────────────────────────────────────
+@router.get("/auth/google/app/login")
+async def google_app_login():
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    if not client_id:
+        raise HTTPException(500, "Google Client ID belum diatur")
+    redirect_uri = "http://localhost:8000/api/auth/google/app/callback"
+    
+    url = (
+        "https://accounts.google.com/o/oauth2/v2/auth?"
+        f"client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
+        "&response_type=code"
+        "&scope=openid email profile"
+        "&access_type=offline"
+        "&prompt=consent"
+    )
+    return RedirectResponse(url)
+
+@router.get("/auth/google/app/callback")
+async def google_app_callback(code: str, db: AsyncSession = Depends(get_db)):
+    if not code:
+        raise HTTPException(400, "Code missing")
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    redirect_uri = "http://localhost:8000/api/auth/google/app/callback"
+    
+    async with httpx.AsyncClient() as client:
+        resp = await client.post("https://oauth2.googleapis.com/token", data={
+            "code": code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        })
+        token_data = resp.json()
+        if "error" in token_data:
+            raise HTTPException(400, token_data.get("error_description", "Token exchange failed"))
+            
+        access_token = token_data.get("access_token")
+        
+        user_info_resp = await client.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        user_info = user_info_resp.json()
+        
+    email = user_info.get("email")
+    name = user_info.get("name", "Google User")
+    if not email:
+        raise HTTPException(400, "Gagal mendapatkan email dari Google")
+        
+    res = await db.execute(select(User).where(User.email == email))
+    user = res.scalar_one_or_none()
+    
+    api_key_raw = ""
+    if not user:
+        import secrets
+        api_key_raw = f"ac_{secrets.token_hex(16)}"
+        hashed_key = hash_api_key(api_key_raw)
+        user = User(
+            email=email,
+            name=name,
+            role="user",
+            api_key=hashed_key,
+            credits=5
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    else:
+        import secrets
+        api_key_raw = f"ac_{secrets.token_hex(16)}"
+        user.api_key = hash_api_key(api_key_raw)
+        await db.commit()
+        
+    return RedirectResponse(f"http://localhost:8081/?api_key={api_key_raw}")

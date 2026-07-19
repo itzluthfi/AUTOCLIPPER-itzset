@@ -1,8 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
+import { API_BASE } from '../services/api';
+import { Ionicons } from '@expo/vector-icons';
 
 const features = [
   { title: 'AI Auto-Detect', desc: 'Deteksi momen penting dari video secara otomatis pake AI atau heuristik' },
@@ -15,16 +17,33 @@ const features = [
 
 export default function HomeScreen({ navigation }: any) {
   const { colors, isDark } = useTheme();
+  const [featuredClips, setFeaturedClips] = useState<any[]>([]);
+  const [playingClipId, setPlayingClipId] = useState<number | null>(null);
 
   useEffect(() => {
     // If user is already logged in, navigate to Dashboard directly
     const checkLoginStatus = async () => {
+      if (Platform.OS === 'web') {
+        const params = new URLSearchParams(window.location.search);
+        const urlKey = params.get('api_key');
+        if (urlKey) {
+          await AsyncStorage.setItem('api_key', urlKey);
+          navigation.replace('MainTabs');
+          return;
+        }
+      }
       const token = await AsyncStorage.getItem('api_key');
       if (token) {
         navigation.replace('MainTabs');
       }
     };
     checkLoginStatus();
+    
+    // Fetch featured clips for showcase
+    fetch(`${API_BASE}/clips/public/featured`)
+      .then(r => r.json())
+      .then(data => setFeaturedClips(data || []))
+      .catch(() => {});
   }, []);
 
   return (
@@ -145,6 +164,45 @@ export default function HomeScreen({ navigation }: any) {
           ))}
         </View>
 
+        {/* Featured Showcase Clips (Admin Chosen) */}
+        {featuredClips.length > 0 && (
+          <View style={{ marginTop: 32 }}>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
+              🔥 Contoh Klip Buatan AI
+            </Text>
+            <Text style={{ color: colors.muted, marginBottom: 16, fontSize: 14 }}>
+              Klip pilihan admin yang di-generate menggunakan AutoClipper
+            </Text>
+            <View style={{ gap: 10 }}>
+              {featuredClips.map((clip) => (
+                <View key={clip.id} style={{
+                  padding: 16, borderRadius: 12, backgroundColor: colors.card,
+                  borderWidth: 1, borderColor: colors.border,
+                  flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={{ fontWeight: '600', color: colors.text, fontSize: 14 }} numberOfLines={1}>
+                      {clip.title}
+                    </Text>
+                    <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>
+                      Durasi: {Math.floor((clip.end - clip.start))} detik
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setPlayingClipId(clip.id)}
+                    style={{
+                      backgroundColor: colors.primary,
+                      paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8,
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Tonton</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {/* Bottom nav links */}
         <View style={{
           flexDirection: 'row',
@@ -171,6 +229,41 @@ export default function HomeScreen({ navigation }: any) {
           &copy; 2026 AutoClipper. All rights reserved.
         </Text>
       </ScrollView>
+
+      {/* Video Player Modal Overlay */}
+      {playingClipId !== null && (
+        <View style={{
+          position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
+          backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center',
+          padding: 20, zIndex: 9999,
+        }}>
+          <View style={{
+            width: '100%', maxWidth: 500, backgroundColor: colors.card,
+            borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border,
+          }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={{ fontWeight: '700', color: colors.text, fontSize: 16 }}>Contoh Klip Showcase</Text>
+              <TouchableOpacity onPress={() => setPlayingClipId(null)} style={{ padding: 4 }}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {Platform.OS === 'web' ? (
+              <video
+                src={`${API_BASE}/clips/${playingClipId}/file/public`}
+                controls
+                autoPlay
+                style={{ width: '100%', borderRadius: 8, maxHeight: 400, backgroundColor: '#000' }}
+              />
+            ) : (
+              <View style={{ height: 200, backgroundColor: '#000', borderRadius: 8, justifyContent: 'center', alignItems: 'center' }}>
+                <Ionicons name="play-circle" size={48} color={colors.primary} />
+                <Text style={{ color: '#fff', marginTop: 8, fontSize: 12 }}>Pemutar video diaktifkan di Web Browser</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
     </View>
   );
 }

@@ -56,6 +56,7 @@ class Clip(Base):
     status: Mapped[str] = mapped_column(sa.String(50), default="pending")
     youtube_url: Mapped[str] = mapped_column(sa.Text, nullable=True)
     title: Mapped[str] = mapped_column(sa.String(500), nullable=True)
+    is_featured: Mapped[bool] = mapped_column(sa.Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.utcnow)
 
     video = relationship("Video", back_populates="clips")
@@ -68,4 +69,20 @@ class CreditTransaction(Base):
     amount: Mapped[int] = mapped_column(sa.Integer)
     type: Mapped[str] = mapped_column(sa.String(50))  # bonus, usage, purchase
     description: Mapped[str] = mapped_column(sa.Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.utcnow)
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(sa.String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(sa.Text)
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id: Mapped[str] = mapped_column(sa.String(100), primary_key=True)  # order_id
+    user_id: Mapped[int] = mapped_column(sa.ForeignKey("users.id"))
+    credits: Mapped[int] = mapped_column(sa.Integer)
+    amount: Mapped[float] = mapped_column(sa.Float)
+    status: Mapped[str] = mapped_column(sa.String(50), default="pending")  # pending, settlement, expire, cancel
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.utcnow)

@@ -46,7 +46,7 @@ export default function ProcessingScreen({ route, navigation }: any) {
           navigation.replace('Results', { videoId });
         } else if (video.status === 'failed') {
           clearInterval(interval);
-          setError(video.error || 'Proses gagal. Silakan coba lagi.');
+          setError(video.error_message || 'Proses gagal. Silakan coba lagi.');
         }
       } catch (e) { console.error('Error fetching video status:', e);}
     }, 2000);

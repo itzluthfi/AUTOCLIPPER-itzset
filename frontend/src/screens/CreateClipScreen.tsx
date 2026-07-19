@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
-import { submitVideo, checkCookieStatus, loadApiKey } from '../services/api';
+import { submitVideo, checkCookieStatus, loadApiKey, API_BASE } from '../services/api';
 import { SkeletonLoader } from '../components/SkeletonLoader';
 
 export default function CreateClipScreen({ navigation }: any) {
@@ -50,9 +51,23 @@ export default function CreateClipScreen({ navigation }: any) {
     setLoading(true);
     try {
       const result = await submitVideo(url.trim(), mode, tracking);
+      try {
+        const activeJobsStr = await AsyncStorage.getItem('active_jobs');
+        const activeJobs = activeJobsStr ? JSON.parse(activeJobsStr) : [];
+        activeJobs.push(result.video_id);
+        await AsyncStorage.setItem('active_jobs', JSON.stringify(activeJobs));
+      } catch {}
       navigation.replace('Processing', { videoId: result.video_id });
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Gagal memproses video');
+      const isInsuf = e.message && (e.message.toLowerCase().includes('credits') || e.message.includes('402'));
+      if (isInsuf) {
+        Alert.alert(
+          'Kredit AI Habis',
+          'Kredit Anda tidak mencukupi untuk memproses video menggunakan AI.\n\nSilakan beralih ke mode "Heuristik" (Gratis) atau hubungi administrator untuk melakukan top-up kredit Anda.'
+        );
+      } else {
+        Alert.alert('Error', e.message || 'Gagal memproses video');
+      }
     } finally {
       setLoading(false);
     }
@@ -98,9 +113,9 @@ export default function CreateClipScreen({ navigation }: any) {
                   const form = new FormData();
                   form.append('file', file);
                   try {
-                    const resp = await fetch('/api/cookie/upload', {
+                    const resp = await fetch(`${API_BASE}/cookie/upload`, {
                       method: 'POST',
-                      headers: { 'X-API-Key': await loadApiKey() },
+                      headers: { 'X-API-Key': (await loadApiKey()) || '' },
                       body: form,
                     });
                     const json = await resp.json();

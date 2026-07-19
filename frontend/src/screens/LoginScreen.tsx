@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Platform, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
-import { setApiKey, getUser, loadApiKey } from '../services/api';
-
-const API_BASE = 'https://autoclipper.sir-l.web.id/api';
+import { setApiKey, getUser, loadApiKey, API_BASE } from '../services/api';
 
 export default function LoginScreen({ navigation }: any) {
   const { colors, isDark } = useTheme();
@@ -33,19 +31,14 @@ export default function LoginScreen({ navigation }: any) {
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     try {
-      const resp = await fetch(`${API_BASE}/auth/google/login`);
-      const data = await resp.json();
-
-      if (data.login_url) {
-        // Web: redirect
-        if (typeof window !== 'undefined') {
-          window.location.href = data.login_url;
-        }
+      const url = `${API_BASE}/auth/google/app/login`;
+      if (Platform.OS === 'web') {
+        window.location.href = url;
       } else {
-        alert('Google OAuth belum dikonfigurasi. Admin perlu set GOOGLE_CLIENT_ID.');
+        await Linking.openURL(url);
       }
     } catch (e: any) {
-      alert('Gagal menghubungi server');
+      alert('Gagal membuka halaman login Google');
     }
     setGoogleLoading(false);
   };

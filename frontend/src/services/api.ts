@@ -1,6 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE = 'https://autoclipper.sir-l.web.id/api';
+// In development mode, point to local FastAPI server, otherwise production
+export const API_BASE = typeof __DEV__ !== 'undefined' && __DEV__
+  ? 'http://localhost:8000/api'
+  : 'https://autoclipper.sir-l.web.id/api';
 
 let apiKey: string | null = null;
 
@@ -101,4 +104,29 @@ export async function uploadCookie(file: File) {
     throw new Error(err.detail);
   }
   return response.json();
+}
+
+export async function getClip(clipId: number) {
+  return request(`/clips/${clipId}`);
+}
+
+export async function updateClip(clipId: number, data: { title: string; start: number; end: number; subtitle: string }) {
+  return request(`/clips/${clipId}/edit`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getPublicSettings(): Promise<{ payment_enabled: boolean; midtrans_client_key: string }> {
+  // Use raw fetch because this endpoint is public and does not need authentication headers
+  const resp = await fetch(`${API_BASE}/settings/public`);
+  if (!resp.ok) throw new Error('Gagal memuat pengaturan publik');
+  return resp.json();
+}
+
+export async function createCheckout(credits: number, amount: number): Promise<{ order_id: string; token: string; redirect_url: string }> {
+  return request('/payments/checkout', {
+    method: 'POST',
+    body: JSON.stringify({ credits, amount }),
+  });
 }

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getVideo } from '../services/api';
 
 import HomeScreen from '../screens/HomeScreen';
 import LoginScreen from '../screens/LoginScreen';
@@ -17,6 +19,7 @@ import PrivacyScreen from '../screens/PrivacyScreen';
 import CookieScreen from '../screens/CookieScreen';
 import TermsScreen from '../screens/TermsScreen';
 import AboutScreen from '../screens/AboutScreen';
+import CheckoutScreen from '../screens/CheckoutScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { TabLayout } from './TabLayout';
 
@@ -25,21 +28,58 @@ const Stack = createStackNavigator();
 export function AppNavigator() {
   const { colors, isDark } = useTheme();
 
+  useEffect(() => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const apiKey = await AsyncStorage.getItem('api_key');
+        if (!apiKey) return;
+        
+        const activeJobsStr = await AsyncStorage.getItem('active_jobs');
+        if (!activeJobsStr) return;
+        
+        let activeJobs: number[] = JSON.parse(activeJobsStr);
+        if (activeJobs.length === 0) return;
+        
+        const updatedJobs: number[] = [...activeJobs];
+        
+        for (const videoId of activeJobs) {
+          const video = await getVideo(videoId).catch(() => null);
+          if (!video) continue;
+          
+          if (video.status === 'completed') {
+            alert(`🎉 Video "${video.title || 'Video YouTube'}" selesai diproses! Silakan periksa di menu Riwayat.`);
+            const index = updatedJobs.indexOf(videoId);
+            if (index > -1) updatedJobs.splice(index, 1);
+          } else if (video.status === 'failed') {
+            alert(`❌ Gagal memproses video: ${video.error_message || 'Terjadi kesalahan'}`);
+            const index = updatedJobs.indexOf(videoId);
+            if (index > -1) updatedJobs.splice(index, 1);
+          }
+        }
+        
+        await AsyncStorage.setItem('active_jobs', JSON.stringify(updatedJobs));
+      } catch (e) {
+        console.error('Background polling error:', e);
+      }
+    }, 7000);
+    
+    return () => clearInterval(pollInterval);
+  }, []);
+
   return (
     <NavigationContainer>
       <Stack.Navigator
         initialRouteName="Home"
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: colors.background },
-          animation: 'slide_from_right',
+          cardStyle: { backgroundColor: colors.background },
         }}
       >
         {/* Main Tabs (for Dashboard, CreateClip, History, Profile) */}
         <Stack.Screen name="MainTabs" options={{ headerShown: false }}>
           {({ navigation, route }) => (
             <TabLayout routeName={route.name} navigation={navigation}>
-              <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
+              <Stack.Navigator screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="Dashboard" component={DashboardScreen} />
                 <Stack.Screen name="CreateClip" component={CreateClipScreen} />
                 <Stack.Screen name="History" component={HistoryScreen} />
@@ -55,6 +95,7 @@ export function AppNavigator() {
         <Stack.Screen name="Processing" component={ProcessingScreen} />
         <Stack.Screen name="Results" component={ResultsScreen} />
         <Stack.Screen name="EditClip" component={EditClipScreen} />
+        <Stack.Screen name="Checkout" component={CheckoutScreen} />
         <Stack.Screen name="Admin" component={AdminScreen} />
         <Stack.Screen name="FAQ" component={FAQScreen} />
         <Stack.Screen name="Privacy" component={PrivacyScreen} />

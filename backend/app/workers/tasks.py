@@ -113,8 +113,20 @@ def process_video(self, video_id: int, youtube_url: str, user_id: int):
             )
 
             if success:
+                thumb_filename = f"thumb_{video_id}_{i}.jpg"
+                thumb_path = os.path.join(CLIPS_DIR, thumb_filename)
+                
+                import subprocess
+                try:
+                    cmd = ["ffmpeg", "-y", "-i", clip_path, "-ss", "00:00:02", "-vframes", "1", thumb_path]
+                    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                except Exception as e:
+                    logger.error(f"Gagal generate thumbnail: {e}")
+                    thumb_path = None
+
                 clip_paths.append({
                     "path": clip_path,
+                    "thumbnail_path": thumb_path,
                     "start": start,
                     "end": end,
                     "reason": reason,
@@ -149,6 +161,7 @@ def process_video(self, video_id: int, youtube_url: str, user_id: int):
                         method="ai" if NOVITA_API_KEY else "heuristic",
                         tracking_type="face" if cp == clip_paths[0] else "none",
                         file_path=cp["path"],
+                        thumbnail_path=cp["thumbnail_path"],
                         status="ready",
                         title=clip_title,
                     )

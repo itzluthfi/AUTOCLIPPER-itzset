@@ -4,13 +4,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { SkeletonLoader } from '../components/SkeletonLoader';
 
-const API_BASE = 'https://autoclipper.sir-l.web.id/api';
+import { API_BASE } from '../services/api';
 
 type Tab = 'dashboard' | 'users' | 'queue' | 'videos' | 'system';
 
 async function apiGet(path: string) {
   const resp = await fetch(`${API_BASE}${path}`, {
-    headers: { 'X-API-Key': await getApiKey() },
+    headers: { 'X-API-Key': (await getApiKey()) || '' },
   });
   if (!resp.ok) throw new Error((await resp.json()).detail || 'Error');
   return resp.json();
@@ -19,7 +19,7 @@ async function apiGet(path: string) {
 async function apiPost(path: string, data?: any) {
   const resp = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: { ...(data ? {'Content-Type': 'application/json'} : {}), 'X-API-Key': await getApiKey() },
+    headers: { ...(data ? {'Content-Type': 'application/json'} : {}), 'X-API-Key': (await getApiKey()) || '' },
     body: data ? JSON.stringify(data) : undefined,
   });
   if (!resp.ok) throw new Error((await resp.json()).detail || 'Error');
@@ -29,7 +29,7 @@ async function apiPost(path: string, data?: any) {
 async function apiPut(path: string, data: any) {
   const resp = await fetch(`${API_BASE}${path}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-API-Key': await getApiKey() },
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': (await getApiKey()) || '' },
     body: JSON.stringify(data),
   });
   if (!resp.ok) throw new Error((await resp.json()).detail || 'Error');
@@ -80,8 +80,35 @@ export default function AdminScreen({ navigation }: any) {
         paddingTop: Platform.OS === 'ios' ? 50 : 10,
         paddingBottom: 12, paddingHorizontal: 16,
         backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
       }}>
         <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text }}>Admin Panel</Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {/* Main App Link */}
+          <TouchableOpacity onPress={() => navigation.navigate('MainTabs')}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 4,
+              paddingHorizontal: 8, paddingVertical: 6, borderRadius: 6,
+              backgroundColor: colors.primary + '20',
+            }}>
+            <Ionicons name="apps" size={14} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '600' }}>Ke App</Text>
+          </TouchableOpacity>
+          {/* Logout Button */}
+          <TouchableOpacity onPress={async () => {
+              const api = await import('../services/api');
+              await api.logout();
+              navigation.replace('Home');
+            }}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 4,
+              paddingHorizontal: 8, paddingVertical: 6, borderRadius: 6,
+              backgroundColor: colors.error + '20',
+            }}>
+            <Ionicons name="log-out" size={14} color={colors.error} />
+            <Text style={{ color: colors.error, fontSize: 11, fontWeight: '600' }}>Keluar</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Tab Navigation */}
@@ -295,7 +322,7 @@ function UsersTab({ colors, isDark }: any) {
       try {
         const resp = await fetch(`${API_BASE}/admin/cookie/upload?user_id=${userId}`, {
           method: 'POST',
-          headers: { 'X-API-Key': await getApiKey() },
+          headers: { 'X-API-Key': (await getApiKey()) || '' },
           body: formData,
         });
         const json = await resp.json();
@@ -445,6 +472,9 @@ function QueueTab({ colors, isDark }: any) {
 function VideosTab({ colors, isDark }: any) {
   const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedVideoId, setExpandedVideoId] = useState<number | null>(null);
+  const [clips, setClips] = useState<any[]>([]);
+  const [clipsLoading, setClipsLoading] = useState(false);
 
   const fetchVideos = useCallback(async () => {
     setLoading(true);
@@ -453,6 +483,38 @@ function VideosTab({ colors, isDark }: any) {
   }, []);
 
   useEffect(() => { fetchVideos(); }, []);
+
+  const handleExpandVideo = async (videoId: number) => {
+    if (expandedVideoId === videoId) {
+      setExpandedVideoId(null);
+      setClips([]);
+      return;
+    }
+    setExpandedVideoId(videoId);
+    setClipsLoading(true);
+    try {
+      const data = await apiGet(`/videos/${videoId}`);
+      setClips(data.clips || []);
+    } catch (e: any) {
+      alert('Gagal memuat klip video');
+    }
+    setClipsLoading(false);
+  };
+
+  const handleToggleFeature = async (clip: any) => {
+    const updatedStatus = !clip.is_featured;
+    
+    // Optimistic UI update
+    setClips(prev => prev.map(c => c.id === clip.id ? { ...c, is_featured: updatedStatus } : c));
+    
+    try {
+      await apiPut(`/clips/${clip.id}/edit`, { is_featured: updatedStatus });
+    } catch (e: any) {
+      alert('Gagal memperbarui status featured');
+      // Revert
+      setClips(prev => prev.map(c => c.id === clip.id ? { ...c, is_featured: !updatedStatus } : c));
+    }
+  };
 
   if (loading) return <View style={{ padding: 16 }}><SkeletonLoader height={60} /><SkeletonLoader height={60} /></View>;
 
@@ -467,25 +529,66 @@ function VideosTab({ colors, isDark }: any) {
           <Text style={{ color: colors.muted, marginTop: 8 }}>Belum ada video</Text>
         </View>
       ) : (
-        videos.map((v: any) => (
-          <View key={v.id} style={{ padding: 14, borderRadius: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ fontWeight: '600', color: colors.text, flex: 1, fontSize: 13 }} numberOfLines={1}>
-                {v.title || 'Video ' + v.youtube_id}
-              </Text>
-              <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: statusColor(v.status, colors) + '20' }}>
-                <Text style={{ color: statusColor(v.status, colors), fontSize: 11, fontWeight: '500' }}>{statusLabel(v.status)}</Text>
-              </View>
+        videos.map((v: any) => {
+          const isExpanded = expandedVideoId === v.id;
+          return (
+            <View key={v.id} style={{ padding: 14, borderRadius: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 8 }}>
+              <TouchableOpacity onPress={() => handleExpandVideo(v.id)} activeOpacity={0.7}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <Text style={{ fontWeight: '600', color: colors.text, flex: 1, fontSize: 13 }} numberOfLines={1}>
+                    {v.title || 'Video ' + v.youtube_id}
+                  </Text>
+                  <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: statusColor(v.status, colors) + '20', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={{ color: statusColor(v.status, colors), fontSize: 11, fontWeight: '500' }}>{statusLabel(v.status)}</Text>
+                    <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={12} color={statusColor(v.status, colors)} />
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4 }}>
+                  <Text style={{ color: colors.muted, fontSize: 11 }}>User: {v.user_name}</Text>
+                  <Text style={{ color: colors.muted, fontSize: 11 }}>
+                    {v.clips_count} klip · {v.duration ? Math.floor(v.duration / 60) + 'm' : '?'}
+                  </Text>
+                </View>
+                {v.error && <Text style={{ color: colors.error, fontSize: 11, marginTop: 4 }}>{v.error}</Text>}
+              </TouchableOpacity>
+
+              {/* Expanded Clips list */}
+              {isExpanded && (
+                <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }}>
+                  {clipsLoading ? (
+                    <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 10 }} />
+                  ) : clips.length === 0 ? (
+                    <Text style={{ color: colors.muted, fontSize: 12, textAlign: 'center', paddingVertical: 6 }}>Belum ada klip yang dibuat.</Text>
+                  ) : (
+                    <View style={{ gap: 8 }}>
+                      {clips.map((clip, idx) => (
+                        <View key={clip.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 8, borderRadius: 6, backgroundColor: isDark ? '#1a1a1a' : '#f8fafc' }}>
+                          <View style={{ flex: 1, marginRight: 10 }}>
+                            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text }} numberOfLines={1}>
+                              {clip.title || `Klip ${idx + 1}`}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.muted }}>
+                              {Math.floor(clip.start / 60)}:{(clip.start % 60).toString().padStart(2, '0')} - {Math.floor(clip.end / 60)}:{(clip.end % 60).toString().padStart(2, '0')}
+                            </Text>
+                          </View>
+                          
+                          {/* Toggle Featured Button */}
+                          <TouchableOpacity onPress={() => handleToggleFeature(clip)} style={{ padding: 6 }}>
+                            <Ionicons 
+                              name={clip.is_featured ? "star" : "star-outline"} 
+                              color={clip.is_featured ? "#f1c40f" : colors.muted} 
+                              size={18} 
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4 }}>
-              <Text style={{ color: colors.muted, fontSize: 11 }}>User: {v.user_name}</Text>
-              <Text style={{ color: colors.muted, fontSize: 11 }}>
-                {v.clips_count} klip · {v.duration ? Math.floor(v.duration / 60) + 'm' : '?'}
-              </Text>
-            </View>
-            {v.error && <Text style={{ color: colors.error, fontSize: 11, marginTop: 4 }}>{v.error}</Text>}
-          </View>
-        ))
+          );
+        })
       )}
     </ScrollView>
   );
@@ -494,14 +597,42 @@ function VideosTab({ colors, isDark }: any) {
 /* ─── System Tab ────────────────────────────────────── */
 function SystemTab({ colors, isDark }: any) {
   const [sys, setSys] = useState<any>(null);
+  const [settings, setSettings] = useState<any>({
+    payment_enabled: "false",
+    midtrans_client_key: "",
+    midtrans_server_key: "",
+    midtrans_is_production: "false"
+  });
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const sysData = await apiGet('/admin/system');
+      setSys(sysData);
+      const settingsData = await apiGet('/admin/settings');
+      setSettings((prev: any) => ({ ...prev, ...settingsData }));
+    } catch (e: any) {
+      console.error(e.message);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
-    (async () => {
-      try { setSys(await apiGet('/admin/system')); } catch (e: any) { console.error(e.message); }
-      setLoading(false);
-    })();
+    loadData();
   }, []);
+
+  const handleSaveSettings = async () => {
+    setSaving(true);
+    try {
+      await apiPut('/admin/settings', settings);
+      alert('Pengaturan berhasil disimpan!');
+    } catch (e: any) {
+      alert('Gagal menyimpan pengaturan: ' + e.message);
+    }
+    setSaving(false);
+  };
 
   if (loading) return <View style={{ padding: 16 }}><SkeletonLoader height={60} /></View>;
   if (!sys) return null;
@@ -523,15 +654,101 @@ function SystemTab({ colors, isDark }: any) {
           </View>
           <View style={{ height: 6, borderRadius: 3, backgroundColor: isDark ? '#2a2a2a' : '#e2e8f0', overflow: 'hidden' }}>
             <View style={{
-              width: item.label === 'CPU' ? sys.cpu_percent + '%' : item.label === 'RAM' ? sys.memory_percent + '%' : sys.disk_percent.toFixed(1) + '%',
+              width: (item.label === 'CPU' ? sys.cpu_percent + '%' : item.label === 'RAM' ? sys.memory_percent + '%' : sys.disk_percent.toFixed(1) + '%') as any,
               height: '100%', borderRadius: 3, backgroundColor: item.color,
             }} />
           </View>
         </View>
       ))}
-      <View style={{ padding: 14, borderRadius: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
+      <View style={{ padding: 14, borderRadius: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 20 }}>
         <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 4, fontSize: 14 }}>Disk Free</Text>
         <Text style={{ color: colors.muted, fontSize: 13 }}>{sys.disk_free_gb} GB tersisa</Text>
+      </View>
+
+      {/* Payment Gateway Settings */}
+      <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 12, fontSize: 15 }}>Pengaturan Pembayaran (Midtrans)</Text>
+      <View style={{ padding: 16, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 40, gap: 12 }}>
+        
+        {/* Toggle Payment Enabled */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={{ fontWeight: '600', color: colors.text, fontSize: 14 }}>Aktifkan Pembayaran</Text>
+            <Text style={{ fontSize: 11, color: colors.muted }}>Tampilkan tombol top-up di profil user</Text>
+          </View>
+          <TouchableOpacity 
+            onPress={() => setSettings((prev: any) => ({ ...prev, payment_enabled: prev.payment_enabled === 'true' ? 'false' : 'true' }))}
+            style={{
+              paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+              backgroundColor: settings.payment_enabled === 'true' ? colors.success + '20' : colors.muted + '20',
+              borderWidth: 1, borderColor: settings.payment_enabled === 'true' ? colors.success : colors.muted
+            }}
+          >
+            <Text style={{ color: settings.payment_enabled === 'true' ? colors.success : colors.muted, fontSize: 12, fontWeight: '600' }}>
+              {settings.payment_enabled === 'true' ? 'AKTIF' : 'NONAKTIF'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Toggle Production mode */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={{ fontWeight: '600', color: colors.text, fontSize: 14 }}>Production Mode</Text>
+            <Text style={{ fontSize: 11, color: colors.muted }}>Gunakan sandbox jika dinonaktifkan</Text>
+          </View>
+          <TouchableOpacity 
+            onPress={() => setSettings((prev: any) => ({ ...prev, midtrans_is_production: prev.midtrans_is_production === 'true' ? 'false' : 'true' }))}
+            style={{
+              paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+              backgroundColor: settings.midtrans_is_production === 'true' ? colors.primary + '20' : colors.muted + '20',
+              borderWidth: 1, borderColor: settings.midtrans_is_production === 'true' ? colors.primary : colors.muted
+            }}
+          >
+            <Text style={{ color: settings.midtrans_is_production === 'true' ? colors.primary : colors.muted, fontSize: 12, fontWeight: '600' }}>
+              {settings.midtrans_is_production === 'true' ? 'PRODUCTION' : 'SANDBOX'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Midtrans Client Key */}
+        <View>
+          <Text style={{ fontWeight: '500', color: colors.text, fontSize: 12, marginBottom: 4 }}>Midtrans Client Key</Text>
+          <TextInput
+            value={settings.midtrans_client_key}
+            onChangeText={(txt) => setSettings((prev: any) => ({ ...prev, midtrans_client_key: txt }))}
+            style={inputStyle(colors, isDark)}
+            placeholder="Masukkan Client Key..."
+            placeholderTextColor={colors.muted}
+          />
+        </View>
+
+        {/* Midtrans Server Key */}
+        <View>
+          <Text style={{ fontWeight: '500', color: colors.text, fontSize: 12, marginBottom: 4 }}>Midtrans Server Key</Text>
+          <TextInput
+            value={settings.midtrans_server_key}
+            onChangeText={(txt) => setSettings((prev: any) => ({ ...prev, midtrans_server_key: txt }))}
+            style={inputStyle(colors, isDark)}
+            placeholder="Masukkan Server Key..."
+            placeholderTextColor={colors.muted}
+            secureTextEntry
+          />
+        </View>
+
+        {/* Save button */}
+        <TouchableOpacity
+          onPress={handleSaveSettings}
+          disabled={saving}
+          style={{
+            backgroundColor: colors.primary,
+            paddingVertical: 12, borderRadius: 8,
+            alignItems: 'center', justifyContent: 'center', marginTop: 10
+          }}
+        >
+          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>
+            {saving ? 'Menyimpan...' : 'Simpan Pengaturan'}
+          </Text>
+        </TouchableOpacity>
+
       </View>
     </ScrollView>
   );

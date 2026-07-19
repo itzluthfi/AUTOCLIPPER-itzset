@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
 import { SkeletonLoader } from '../components/SkeletonLoader';
-import { getApiKey } from '../services/api'; // Import getApiKey
+import { getApiKey, API_BASE } from '../services/api'; // Import getApiKey and API_BASE
 
 const statusColor = (status: string, colors: any) => {
   switch (status) {
@@ -55,7 +55,7 @@ export default function HistoryScreen({ navigation }: any) {
         setLoading(false);
         return;
       }
-      const resp = await fetch('https://autoclipper.sir-l.web.id/api/user/videos', {
+      const resp = await fetch(`${API_BASE}/user/videos`, {
         headers: { 'X-API-Key': key },
       });
       if (resp.ok) setVideos(await resp.json());

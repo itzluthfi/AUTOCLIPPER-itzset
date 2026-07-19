@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
 import { ProgressBar } from '../components/ProgressBar';
-import { getVideo, downloadClip } from '../services/api';
+import { getVideo, downloadClip, getApiKey, API_BASE } from '../services/api';
 
 export default function ResultsScreen({ route, navigation }: any) {
   const { videoId } = route.params;
@@ -12,12 +12,8 @@ export default function ResultsScreen({ route, navigation }: any) {
   const [video, setVideo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const animatedProgress = useSharedValue(0);
-  const barStyle = useAnimatedStyle(() => ({
-    width: animatedProgress.value + '%',
-    opacity: animatedProgress.value === 100 ? 1 : 0.7,
-  }));
-
+  const [playingClipId, setPlayingClipId] = useState<number | null>(null);
+  const [apiKey, setApiKey] = useState<string | null>(null);
   const loadVideo = async () => {
     try {
       const v = await getVideo(videoId);
@@ -26,17 +22,9 @@ export default function ResultsScreen({ route, navigation }: any) {
     finally { setLoading(false); }
   };
 
-  const animateProgress = () => {
-    Animated.timing(animatedProgress, {
-      toValue: 100,
-      duration: 1500,
-      useNativeDriver: false,
-      easing: Easing.elastic(1, 0.5),
-    }).start();
-  };
-
   useEffect(() => {
     loadVideo();
+    getApiKey().then(setApiKey);
   }, [videoId]);
 
   const renderClip = (clip: any, index: number) => {
@@ -45,21 +33,8 @@ export default function ResultsScreen({ route, navigation }: any) {
     const bgColor = clip.status === 'completed' ? colors.success :
                     clip.status === 'processing' ? colors.warning : colors.muted;
 
-    const progress = animatedProgress.value / 10;
-    const progressStyle = useAnimatedStyle(() => ({
-      transform: [{ translateX: progress * 150 }],
-    }));
-
-    const animatedTitle = useSharedValue(clip.title || `Klip ${index + 1}`);
-    const titleAnim = useAnimatedStyle(() => ({
-      transform: [{ translateY: animatedTitle.value > 0 ? 0 : -20 }],
-      opacity: animatedTitle.value > 0 ? 1 : 0,
-    }));
-
-    animatedTitle.value = 1;
-
     return (
-      <View key={clip.id} style={styles.card}>
+      <View key={clip.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Animated.View style={{ opacity: 0.8 }}>
           <Text style={styleI({ fontWeight: '600', color: clip.status === 'completed' ? colors.success : colors.text })}>
             {clip.title || `Klip ${index + 1}`}
@@ -76,35 +51,56 @@ export default function ResultsScreen({ route, navigation }: any) {
 
         {/* Action Buttons */}
         <View style={styles.actionRow}>
-          {clip.status === 'completed' && (
-            <TouchableOpacity
-              onPress={() => navigation.navigate('EditClip', { clipId: clip.id })}
-              style={styles.btnEdit}
-            >
-              <Text style={styles.btnText}>Edit</Text>
-            </TouchableOpacity>
+          {clip.status === 'ready' || clip.status === 'completed' ? (
+            <>
+              <TouchableOpacity
+                onPress={() => setPlayingClipId(clip.id)}
+                style={[styles.btnEdit, { backgroundColor: isDark ? '#1a1a1a' : '#f1f5f9', borderWidth: 1, borderColor: colors.border }]}
+              >
+                <Text style={[styles.btnText, { color: colors.text }]}>▶ Play</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('EditClip', { clipId: clip.id })}
+                style={styles.btnEdit}
+              >
+                <Text style={styles.btnText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={async () => {
+                  try {
+                    const url = await downloadClip(clip.id);
+                    if (Platform.OS === 'web') {
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `clip_${clip.id}.mp4`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                    } else {
+                      alert('Link download akan dibuka di browser.');
+                    }
+                  } catch (e) {
+                    alert('Gagal mendownload klip.');
+                  }
+                }}
+                style={styles.btnDownload}
+              >
+                <Text style={styles.btnText}>Download</Text>
+              </TouchableOpacity>
+            </>
+          ) : clip.status === 'processing' || clip.status === 'downloading' ? (
+            <View style={[styles.btnDownload, { backgroundColor: colors.warning + '30', flex: 1, borderWidth: 1, borderColor: colors.warning, paddingVertical: 8, borderRadius: 8, alignItems: 'center' }]}>
+              <Text style={{ color: colors.warning, fontWeight: '600', fontSize: 13 }}>⏳ Sedang Diproses...</Text>
+            </View>
+          ) : clip.status === 'failed' ? (
+            <View style={[styles.btnDownload, { backgroundColor: colors.error + '30', flex: 1, borderWidth: 1, borderColor: colors.error, paddingVertical: 8, borderRadius: 8, alignItems: 'center' }]}>
+              <Text style={{ color: colors.error, fontWeight: '600', fontSize: 13 }}>❌ Gagal Memproses</Text>
+            </View>
+          ) : (
+            <View style={[styles.btnDownload, { backgroundColor: colors.card, flex: 1, borderWidth: 1, borderColor: colors.border, paddingVertical: 8, borderRadius: 8, alignItems: 'center' }]}>
+              <Text style={{ color: colors.muted, fontWeight: '600', fontSize: 13 }}>🕒 Mengantri...</Text>
+            </View>
           )}
-          <TouchableOpacity
-            onPress={async () => {
-              try {
-                const url = await downloadClip(clip.id);
-                // Trigger download in web
-                if (typeof window !== 'undefined') {
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `clip_${clip.id}.mp4`;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                } else {
-                  alert('Link akan dibuka di browser');
-                }
-              } catch (e) { alert('Gagal mendownload'); }
-            }}
-            style={styles.btnDownload}
-          >
-            <Text style={styles.btnText}>Download</Text>
-          </TouchableOpacity>
         </View>
 
         <Text style={styleI({ color: colors.muted, fontSize: 12, marginTop: 6 })}>
@@ -125,7 +121,7 @@ export default function ResultsScreen({ route, navigation }: any) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background }}>
         <Header showBack title="Hasil Klip" />
-        <View style={{ padding: 16 }} layout="center" justifyContent="center">
+        <View style={{ padding: 16, justifyContent: 'center', alignItems: 'center' }}>
           {[...Array(4)].map((_, i) => (
             <View key={i} style={{ height: 80, width: '70%', marginVertical: 8, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }} />
           ))}
@@ -164,6 +160,76 @@ export default function ResultsScreen({ route, navigation }: any) {
 
         {video?.clips?.map((clip: any, index: number) => renderClip(clip, index))}
       </ScrollView>
+
+      {/* Video Player Modal Overlay */}
+      {playingClipId !== null && (
+        <View style={{
+          position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
+          backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center',
+          padding: 20, zIndex: 9999,
+        }}>
+          <View style={{
+            width: '100%', maxWidth: 500, backgroundColor: colors.card,
+            borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border,
+          }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={{ fontWeight: '700', color: colors.text, fontSize: 16 }}>Preview Klip</Text>
+              <TouchableOpacity onPress={() => setPlayingClipId(null)} style={{ padding: 4 }}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {Platform.OS === 'web' ? (
+              <video
+                src={`${API_BASE}/clips/${playingClipId}/file?key=${apiKey}`}
+                controls
+                autoPlay
+                style={{ width: '100%', borderRadius: 8, maxHeight: 400, backgroundColor: '#000' }}
+              />
+            ) : (
+              <View style={{ height: 200, backgroundColor: '#000', borderRadius: 8, justifyContent: 'center', alignItems: 'center' }}>
+                <Ionicons name="play-circle" size={48} color={colors.primary} />
+                <Text style={{ color: '#fff', marginTop: 8, fontSize: 12 }}>Pemutar video diaktifkan di Web Browser</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  card: {
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#fff',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  btnEdit: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#3182ce',
+    alignItems: 'center',
+  },
+  btnDownload: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#2ecc71',
+    alignItems: 'center',
+  },
+  btnText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+});

@@ -1813,7 +1813,21 @@ class YTShortClipperApp(ctk.CTk):
         """Called when clipping completes successfully"""
         self.stop_live_timer()
         self.processing = False
+        
+        # Load created clips in results page
+        if self.session_data and "session_dir" in self.session_data:
+            session_dir = Path(self.session_data["session_dir"])
+            clips_dir = session_dir / "clips"
+            self.pages["results"].load_clips(clips_dir)
+            self.pages["results"].show_results()
+            
+            # Set back button of results page to go to home
+            self.pages["results"].set_back_callback(lambda: self.show_page("home"))
+            
         self.pages["clipping"].on_complete()
+        
+        # Auto-navigate to results page after 1.5 seconds so user sees the success state first
+        self.after(1500, lambda: self.show_page("results"))
     
     def on_clipping_error(self, error: str):
         """Called when clipping encounters an error"""
