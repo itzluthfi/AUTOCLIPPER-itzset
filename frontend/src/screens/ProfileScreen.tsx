@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, TextInput, ActivityIndicator,
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
-import { getCredits, getUser, logout, getPublicSettings, checkCookieStatus, uploadCookie, pasteCookieText } from '../services/api';
+import { getCredits, getUser, logout, getPublicSettings, checkCookieStatus, uploadCookie, pasteCookieText, testCookie } from '../services/api';
 
 export default function ProfileScreen({ navigation }: any) {
   const { colors, isDark, theme, setTheme } = useTheme();
@@ -16,6 +16,7 @@ export default function ProfileScreen({ navigation }: any) {
   const [cookieMode, setCookieMode] = useState<'upload' | 'paste'>('upload');
   const [pastedText, setPastedText] = useState('');
   const [savingCookie, setSavingCookie] = useState(false);
+  const [testingCookie, setTestingCookie] = useState(false);
 
   useEffect(() => {
     getCredits().then(c => setCredits(c.credits)).catch(() => {});
@@ -23,6 +24,21 @@ export default function ProfileScreen({ navigation }: any) {
     getPublicSettings().then(s => setPayEnabled(s.payment_enabled)).catch(() => {});
     checkCookieStatus().then((res: any) => setHasCookie(res.has_cookie)).catch(() => {});
   }, []);
+
+  const handleTestCookie = async () => {
+    setTestingCookie(true);
+    try {
+      const res = await testCookie();
+      if (res.valid) {
+        alert('✅ ' + res.message);
+      } else {
+        alert('❌ ' + res.message);
+      }
+    } catch (e: any) {
+      alert(e.message || 'Gagal menguji cookie');
+    }
+    setTestingCookie(false);
+  };
 
   const handlePasteCookie = async () => {
     if (!pastedText.trim()) {
@@ -235,6 +251,25 @@ export default function ProfileScreen({ navigation }: any) {
                         </Text>
                       </TouchableOpacity>
                     </View>
+                  )}
+
+                  {hasCookie && (
+                    <TouchableOpacity
+                      onPress={handleTestCookie}
+                      disabled={testingCookie}
+                      style={{
+                        marginTop: 10, paddingVertical: 10, borderRadius: 8,
+                        backgroundColor: isDark ? '#222' : '#e2e8f0',
+                        alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
+                        opacity: testingCookie ? 0.7 : 1,
+                      }}
+                    >
+                      {testingCookie && <ActivityIndicator color={colors.text} size="small" />}
+                      <Ionicons name="flask-outline" size={16} color={colors.text} />
+                      <Text style={{ color: colors.text, fontWeight: '600', fontSize: 12 }}>
+                        🧪 Uji Validitas Cookie (Test YouTube Access)
+                      </Text>
+                    </TouchableOpacity>
                   )}
                 </View>
               )}

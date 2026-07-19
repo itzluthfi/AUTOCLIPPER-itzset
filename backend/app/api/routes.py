@@ -213,7 +213,7 @@ async def submit_video(
         raise HTTPException(429, "Anda memiliki terlalu banyak antrean video yang sedang diproses. Harap tunggu hingga selesai.")
 
     try:
-        info = await get_video_info(data.url)
+        info = await get_video_info(data.url, cookie_path=user.cookie_path)
     except Exception as e:
         raise HTTPException(400, f"Failed to get video info: {e}")
 
@@ -614,6 +614,14 @@ async def paste_cookie(
 @router.get("/cookie/status")
 async def cookie_status(user: User = Depends(get_current_user)):
     return {"has_cookie": bool(user.cookie_path), "cookie_path": user.cookie_path}
+
+@router.post("/cookie/test")
+async def test_cookie(user: User = Depends(get_current_user)):
+    if not user.cookie_path or not os.path.exists(user.cookie_path):
+        raise HTTPException(400, "Cookie belum di-upload. Harap atur cookie terlebih dahulu.")
+    from app.services.video_service import test_youtube_cookie
+    result = await test_youtube_cookie(user.cookie_path)
+    return result
 
 # ─── Admin Endpoints ─────────────────────────────────────────
 

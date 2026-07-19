@@ -211,20 +211,31 @@ async def clip_video(
         logger.error(f"ffmpeg error: {e}")
         return False
 
-async def get_video_info(youtube_url: str) -> dict:
-    """Ambil metadata video dari YouTube"""
+async def get_video_info(youtube_url: str, cookie_path: Optional[str] = None) -> dict:
+    """Ambil metadata video dari YouTube (dengan opsional cookie_path)"""
     cmd = [
         "yt-dlp", "--dump-json",
         "--no-download",
-        youtube_url
     ]
+    if cookie_path and os.path.exists(cookie_path):
+        cmd.extend(["--cookies", cookie_path])
+    cmd.append(youtube_url)
+
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        stdout, _ = await proc.communicate()
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0 and cookie_path and os.path.exists(cookie_path):
+            # Try once without cookie if failed
+            proc2 = await asyncio.create_subprocess_exec(
+                "yt-dlp", "--dump-json", "--no-download", youtube_url,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await proc2.communicate()
+
         import json
         info = json.loads(stdout)
         return {
@@ -239,3 +250,29 @@ async def get_video_info(youtube_url: str) -> dict:
     except Exception as e:
         logger.error(f"yt-dlp info failed: {e}")
         return {"id": "", "title": "", "duration": 0}
+
+async def test_youtube_cookie(cookie_path: str) -> dict:
+    """Uji apakah file cookie YouTube valid dan bisa digunakan oleh yt-dlp"""
+    if not cookie_path or not os.path.exists(cookie_path):
+        return {"valid": False, "message": "File cookie tidak ditemukan"}
+
+    test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    cmd = [
+        "yt-dlp", "--dump-json", "--no-download",
+        "--cookies", cookie_path,
+        test_url
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode == 0 and len(stdout) > 50:
+            return {"valid": True, "message": "Cookie valid dan berfungsi dengan baik!"}
+        else:
+            err_msg = stderr.decode(errors="ignore").strip()
+            return {"valid": False, "message": f"Cookie tidak valid: {err_msg[:150]}"}
+    except Exception as e:
+        return {"valid": False, "message": f"Gagal menguji cookie: {e}"}

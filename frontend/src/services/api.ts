@@ -117,6 +117,12 @@ export async function pasteCookieText(cookieText: string): Promise<{ status: str
   });
 }
 
+export async function testCookie(): Promise<{ valid: boolean; message: string }> {
+  return request('/cookie/test', {
+    method: 'POST',
+  });
+}
+
 export async function getClip(clipId: number) {
   return request(`/clips/${clipId}`);
 }
