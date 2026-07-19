@@ -529,21 +529,54 @@ def validate_and_save_cookie_text(text_content: str, filename_hint: str, target_
     is_json = False
     is_netscape = False
     
-    if text_clean.startswith("{"):
+    # 1. Check JSON format (Object or Array)
+    if text_clean.startswith("{") or text_clean.startswith("["):
         try:
-            json.loads(text_clean)
+            parsed = json.loads(text_clean)
             is_json = True
+            # If JSON is an array of cookies (e.g. from EditThisCookie), convert to Netscape
+            if isinstance(parsed, list):
+                netscape_lines = ["# Netscape HTTP Cookie File", "# Converted from JSON Cookie Array"]
+                for item in parsed:
+                    if isinstance(item, dict) and "name" in item and "value" in item:
+                        domain = item.get("domain", ".youtube.com")
+                        path = item.get("path", "/")
+                        secure = "TRUE" if item.get("secure", True) else "FALSE"
+                        expires = str(int(item.get("expirationDate", 2147483647)))
+                        name = item["name"]
+                        val = item["value"]
+                        netscape_lines.append(f"{domain}\tTRUE\t{path}\t{secure}\t{expires}\t{name}\t{val}")
+                text_clean = "\n".join(netscape_lines)
+                is_json = False
+                is_netscape = True
         except Exception:
             pass
             
-    if not is_json:
+    # 2. Check Header String format ("key1=val1; key2=val2")
+    if not is_json and not is_netscape:
+        if "=" in text_clean and (";" in text_clean or "LOGIN_INFO=" in text_clean or "SID=" in text_clean):
+            pairs = [p.strip() for p in text_clean.replace("\n", "").split(";") if "=" in p]
+            if pairs:
+                netscape_lines = ["# Netscape HTTP Cookie File", "# Converted from Header String"]
+                for p in pairs:
+                    kv = p.split("=", 1)
+                    if len(kv) == 2:
+                        k, v = kv[0].strip(), kv[1].strip()
+                        if k and v:
+                            netscape_lines.append(f".youtube.com\tTRUE\t/\tTRUE\t2147483647\t{k}\t{v}")
+                if len(netscape_lines) > 2:
+                    text_clean = "\n".join(netscape_lines)
+                    is_netscape = True
+
+    # 3. Check standard Netscape format
+    if not is_json and not is_netscape:
         if "# Netscape" in text_clean or "youtube.com" in text_clean or "LOGIN_INFO" in text_clean or "SID" in text_clean or "\t" in text_clean or ".google.com" in text_clean:
             is_netscape = True
         elif filename_hint.endswith(".txt") or filename_hint.endswith(".cookie") or filename_hint.endswith(".cookies"):
             is_netscape = True
 
     if not is_json and not is_netscape:
-        raise HTTPException(400, "Format cookie tidak dikenali. Gunakan Netscape cookies (.txt) atau JSON (.json)")
+        raise HTTPException(400, "Format cookie tidak dikenali. Gunakan Netscape (.txt), JSON, atau Header String")
 
     os.makedirs(COOKIES_DIR, exist_ok=True)
     ext = ".json" if is_json else ".txt"
