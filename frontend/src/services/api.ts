@@ -47,6 +47,10 @@ async function request(path: string, options: RequestInit = {}) {
   });
 
   if (!response.ok) {
+    if (response.status === 401 && key) {
+      // API key tidak valid/kedaluwarsa — bersihkan sesi lokal
+      await logout();
+    }
     const error = await response.json().catch(() => ({ detail: response.statusText }));
     throw new Error(error.detail || `HTTP ${response.status}`);
   }
@@ -55,7 +59,7 @@ async function request(path: string, options: RequestInit = {}) {
 }
 
 export async function getHealth() {
-  return request('/../health');
+  return request('/health');
 }
 
 export async function submitVideo(url: string, mode: string = 'heuristic', tracking: string = 'center') {
@@ -106,6 +110,13 @@ export async function uploadCookie(file: File) {
   return response.json();
 }
 
+export async function pasteCookieText(cookieText: string): Promise<{ status: string; message: string }> {
+  return request('/cookie/paste', {
+    method: 'POST',
+    body: JSON.stringify({ cookie_text: cookieText }),
+  });
+}
+
 export async function getClip(clipId: number) {
   return request(`/clips/${clipId}`);
 }
@@ -117,17 +128,25 @@ export async function updateClip(clipId: number, data: { title: string; start: n
   });
 }
 
-export async function getPublicSettings(): Promise<{ payment_enabled: boolean; midtrans_client_key: string }> {
+export interface CreditPackage {
+  id: string;
+  credits: number;
+  amount: number;
+  label: string;
+  desc: string;
+}
+
+export async function getPublicSettings(): Promise<{ payment_enabled: boolean; midtrans_client_key: string; packages: CreditPackage[] }> {
   // Use raw fetch because this endpoint is public and does not need authentication headers
   const resp = await fetch(`${API_BASE}/settings/public`);
   if (!resp.ok) throw new Error('Gagal memuat pengaturan publik');
   return resp.json();
 }
 
-export async function createCheckout(credits: number, amount: number): Promise<{ order_id: string; token: string; redirect_url: string }> {
+export async function createCheckout(packageId: string): Promise<{ order_id: string; token: string; redirect_url: string }> {
   return request('/payments/checkout', {
     method: 'POST',
-    body: JSON.stringify({ credits, amount }),
+    body: JSON.stringify({ package_id: packageId }),
   });
 }
 

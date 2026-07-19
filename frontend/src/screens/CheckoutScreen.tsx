@@ -1,24 +1,32 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Linking, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
-import { createCheckout } from '../services/api';
+import { createCheckout, getPublicSettings, CreditPackage } from '../services/api';
 
-const packages = [
-  { credits: 10, price: 50000, label: 'Paket Pemula', desc: 'Cocok untuk mencoba fitur AI Auto-Clip' },
-  { credits: 30, price: 120000, label: 'Paket Kreator', desc: 'Pilihan terbaik untuk kreator konten aktif' },
-  { credits: 100, price: 350000, label: 'Paket Profesional', desc: 'Sangat hemat untuk agensi & tim editor' },
+// Fallback jika endpoint settings belum bisa dijangkau — harga final tetap divalidasi server
+const defaultPackages: CreditPackage[] = [
+  { id: 'starter', credits: 10, amount: 50000, label: 'Paket Pemula', desc: 'Cocok untuk mencoba fitur AI Auto-Clip' },
+  { id: 'creator', credits: 30, amount: 120000, label: 'Paket Kreator', desc: 'Pilihan terbaik untuk kreator konten aktif' },
+  { id: 'pro', credits: 100, amount: 350000, label: 'Paket Profesional', desc: 'Sangat hemat untuk agensi & tim editor' },
 ];
 
 export default function CheckoutScreen({ navigation }: any) {
   const { colors, isDark } = useTheme();
-  const [loadingPkg, setLoadingPkg] = useState<number | null>(null);
+  const [packages, setPackages] = useState<CreditPackage[]>(defaultPackages);
+  const [loadingPkg, setLoadingPkg] = useState<string | null>(null);
 
-  const handleBuy = async (credits: number, price: number) => {
-    setLoadingPkg(credits);
+  useEffect(() => {
+    getPublicSettings()
+      .then((s) => { if (s.packages?.length) setPackages(s.packages); })
+      .catch(() => {});
+  }, []);
+
+  const handleBuy = async (packageId: string) => {
+    setLoadingPkg(packageId);
     try {
-      const res = await createCheckout(credits, price);
+      const res = await createCheckout(packageId);
       if (res.redirect_url) {
         if (Platform.OS === 'web') {
           window.open(res.redirect_url, '_blank');
@@ -62,9 +70,9 @@ export default function CheckoutScreen({ navigation }: any) {
         </View>
 
         {packages.map((pkg) => {
-          const isProcessing = loadingPkg === pkg.credits;
+          const isProcessing = loadingPkg === pkg.id;
           return (
-            <View key={pkg.credits} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View key={pkg.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={{ flex: 1, marginRight: 10 }}>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>{pkg.label}</Text>
                 <Text style={{ fontSize: 12, color: colors.muted, marginTop: 2, marginBottom: 8 }}>{pkg.desc}</Text>
@@ -78,10 +86,10 @@ export default function CheckoutScreen({ navigation }: any) {
 
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: colors.primary, marginBottom: 8 }}>
-                  {formatPrice(pkg.price)}
+                  {formatPrice(pkg.amount)}
                 </Text>
                 <TouchableOpacity
-                  onPress={() => handleBuy(pkg.credits, pkg.price)}
+                  onPress={() => handleBuy(pkg.id)}
                   disabled={loadingPkg !== null}
                   style={{
                     backgroundColor: colors.primary,

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # Scopes needed
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
-async def upload_to_youtube(
+def upload_to_youtube(
     access_token: str,
     refresh_token: str,
     file_path: str,

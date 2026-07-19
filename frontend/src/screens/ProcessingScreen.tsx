@@ -38,7 +38,11 @@ export default function ProcessingScreen({ route, navigation }: any) {
         const video = await getVideo(videoId);
         const statusInfo = STATUS_MAP[video.status] || STATUS_MAP.pending;
 
-        setCurrentProgress(statusInfo.progress);
+        // Backend kini mengirim progress asli (0-100); fallback ke estimasi per-status
+        const progress = typeof video.progress === 'number' && video.progress > 0
+          ? video.progress
+          : statusInfo.progress;
+        setCurrentProgress(progress);
         setCurrentStep(statusInfo.step);
 
         if (video.status === 'completed') {

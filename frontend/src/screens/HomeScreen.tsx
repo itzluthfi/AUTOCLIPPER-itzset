@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Platform, Image, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Platform, Image, StyleSheet, useWindowDimensions } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
+import { FadeInView } from '../components/FadeInView';
+import { LiftCard } from '../components/LiftCard';
 import { API_BASE } from '../services/api';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -17,10 +19,25 @@ const features = [
   { icon: 'trending-up', color: '#f59e0b', title: 'Viral Metadata SEO', desc: 'Generasi otomatis judul clickbait, hook intro, tag, dan deskripsi SEO optimal.' },
 ];
 
+const steps = [
+  { step: '1', title: 'Tempel Link YouTube', desc: 'Masukkan URL video podcast atau streaming panjang favorit Anda.' },
+  { step: '2', title: 'AI Highlight Scans', desc: 'DeepSeek menganalisis dialog & interaksi paling berpotensi viral.' },
+  { step: '3', title: 'Auto-Crop & Subtitle', desc: 'Video dipotong potret 9:16 dengan transkrip font bergaya CapCut.' },
+  { step: '4', title: 'Unggah Instan', desc: 'Tonton pratinjau klip, sesuaikan judul, lalu post ke YouTube Shorts.' },
+];
+
 export default function HomeScreen({ navigation }: any) {
   const { colors, isDark } = useTheme();
+  const { width } = useWindowDimensions();
   const [featuredClips, setFeaturedClips] = useState<any[]>([]);
   const [playingClipId, setPlayingClipId] = useState<number | null>(null);
+
+  // Breakpoint berbasis lebar layar — bukan Platform.OS,
+  // supaya browser HP mendapat layout mobile yang benar.
+  const isWide = width >= 900;    // hero 2 kolom
+  const isTablet = width >= 640;  // grid 2 kolom
+  const isDesktop = width >= 1024; // grid 3 kolom
+  const cardWidth = isDesktop ? '33.33%' : isTablet ? '50%' : '100%';
 
   useEffect(() => {
     const checkLoginStatus = async () => {
@@ -42,176 +59,177 @@ export default function HomeScreen({ navigation }: any) {
 
     fetch(`${API_BASE}/clips/public/featured`)
       .then(r => r.json())
-      .then(data => setFeaturedClips(data || []))
+      .then(data => setFeaturedClips(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
+
+  const card = { backgroundColor: isDark ? '#121214' : '#ffffff', borderColor: colors.border };
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#09090b' : '#f8fafc' }}>
       <Header />
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 60 }}>
-        
-        {/* HERO SECTION */}
-        <View style={[
-          styles.heroContainer,
-          { 
-            backgroundColor: isDark ? '#121214' : '#ffffff', 
-            borderColor: colors.border,
-            flexDirection: Platform.OS === 'web' ? 'row' : 'column'
-          }
-        ]}>
-          
-          {/* Left Column: CTA Info */}
-          <View style={{ flex: 1.2, paddingRight: Platform.OS === 'web' ? 24 : 0, justifyContent: 'center' }}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>⚡ Powered by DeepSeek V4 & Whisper</Text>
-            </View>
-            <Text style={[styles.heroTitle, { color: colors.text }]}>
-              Ubah Video YouTube Jadi <Text style={{ color: '#8b5cf6' }}>Shorts Viral</Text> Dalam Hitungan Detik
-            </Text>
-            <Text style={[styles.heroSubtitle, { color: colors.muted }]}>
-              AutoClipper mengidentifikasi highlight terbaik dari podcast, wawancara, atau streaming game Anda secara cerdas, memotongnya menjadi format portrait 9:16 dengan teks otomatis yang menarik.
-            </Text>
-            
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
-              <TouchableOpacity
-                onPress={() => navigation.navigate('Login')}
-                style={styles.btnPrimary}
-              >
-                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Coba Gratis Sekarang</Text>
-                <Ionicons name="arrow-forward" size={16} color="#fff" />
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                onPress={() => navigation.navigate('FAQ')}
-                style={[styles.btnSecondary, { borderColor: colors.border }]}
-              >
-                <Text style={{ color: colors.text, fontSize: 15, fontWeight: '600' }}>Pelajari Lebih Lanjut</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+        <View style={styles.container}>
 
-          {/* Right Column: Premium Mockup Screenshot */}
-          <View style={{ flex: 1, marginTop: Platform.OS === 'web' ? 0 : 30, alignItems: 'center', justifyContent: 'center' }}>
-            <View style={styles.mockupWrapper}>
-              <Image
-                source={heroImage}
-                style={styles.heroImg}
-              />
-              <View style={styles.glowOverlay} />
-            </View>
-          </View>
-
-        </View>
-
-        {/* CARA KERJA */}
-        <View style={{ paddingHorizontal: 24, marginTop: 40 }}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Cara Kerja Cepat</Text>
-          <Text style={[styles.sectionSub, { color: colors.muted }]}>Hanya 4 langkah mudah untuk mengunggah klip viral pertama Anda</Text>
-          
-          <View style={{ flexDirection: Platform.OS === 'web' ? 'row' : 'column', gap: 16, marginTop: 24 }}>
-            {[
-              { step: '1', title: 'Tempel Link YouTube', desc: 'Masukkan URL video podcast atau streaming panjang favorit Anda.' },
-              { step: '2', title: 'AI Highlight Scans', desc: 'DeepSeek menganalisis dialog & interaksi paling berpotensi viral.' },
-              { step: '3', title: 'Auto-Crop & Subtitle', desc: 'Video dipotong potret 9:16 dengan transkrip font bergaya CapCut.' },
-              { step: '4', title: 'Unggah Instan', desc: 'Tonton pratinjau klip, sesuaikan judul, lalu post ke YouTube Shorts.' },
-            ].map((item, i) => (
-              <View key={i} style={[styles.stepCard, { backgroundColor: isDark ? '#121214' : '#fff', borderColor: colors.border }]}>
-                <View style={styles.stepBadge}>
-                  <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>{item.step}</Text>
+          {/* HERO */}
+          <FadeInView>
+            <View style={[
+              styles.heroContainer,
+              card,
+              {
+                flexDirection: isWide ? 'row' : 'column',
+                padding: isWide ? 32 : 20,
+                margin: isWide ? 24 : 16,
+              }
+            ]}>
+              <View style={{ flex: isWide ? 1.2 : undefined, paddingRight: isWide ? 24 : 0, justifyContent: 'center' }}>
+                <View style={styles.badge}>
+                  <Ionicons name="flash" size={12} color="#8b5cf6" />
+                  <Text style={styles.badgeText}>Powered by DeepSeek V4 & Whisper</Text>
                 </View>
-                <Text style={[styles.stepTitle, { color: colors.text }]}>{item.title}</Text>
-                <Text style={[styles.stepDesc, { color: colors.muted }]}>{item.desc}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
+                <Text style={[styles.heroTitle, { color: colors.text, fontSize: isWide ? 34 : 26, lineHeight: isWide ? 44 : 34 }]}>
+                  Ubah Video YouTube Jadi <Text style={{ color: '#8b5cf6' }}>Shorts Viral</Text> Dalam Hitungan Detik
+                </Text>
+                <Text style={[styles.heroSubtitle, { color: colors.muted }]}>
+                  AutoClipper mengidentifikasi highlight terbaik dari podcast, wawancara, atau streaming game Anda secara cerdas, memotongnya menjadi format portrait 9:16 dengan teks otomatis yang menarik.
+                </Text>
 
-        {/* FITUR UNGGULAN */}
-        <View style={{ paddingHorizontal: 24, marginTop: 48 }}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Fitur Unggulan Premium</Text>
-          <Text style={[styles.sectionSub, { color: colors.muted }]}>Dilengkapi teknologi pemrosesan video tercanggih saat ini</Text>
-          
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -8, marginTop: 24 }}>
-            {features.map((f, i) => (
-              <View key={i} style={{ width: Platform.OS === 'web' ? '33.33%' : '50%', paddingHorizontal: 8, marginBottom: 16 }}>
-                <View style={[styles.featureCard, { backgroundColor: isDark ? '#121214' : '#fff', borderColor: colors.border }]}>
-                  <View style={[styles.iconContainer, { backgroundColor: f.color + '15' }]}>
-                    <Ionicons name={f.icon as any} size={22} color={f.color} />
-                  </View>
-                  <Text style={[styles.featureTitle, { color: colors.text }]}>{f.title}</Text>
-                  <Text style={[styles.featureDesc, { color: colors.muted }]}>{f.desc}</Text>
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('Login')}
+                    style={styles.btnPrimary}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Coba Gratis Sekarang</Text>
+                    <Ionicons name="arrow-forward" size={16} color="#fff" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('FAQ')}
+                    style={[styles.btnSecondary, { borderColor: colors.border }]}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ color: colors.text, fontSize: 15, fontWeight: '600' }}>Pelajari Lebih Lanjut</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-            ))}
-          </View>
-        </View>
 
-        {/* FEATURED SHOWCASE CLIPS */}
-        {featuredClips.length > 0 && (
-          <View style={{ paddingHorizontal: 24, marginTop: 48 }}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>🔥 Contoh Klip Hasil AI</Text>
-            <Text style={[styles.sectionSub, { color: colors.muted }]}>Tonton beberapa video viral pilihan admin yang dibuat oleh sistem</Text>
-            
-            <View style={{ flexDirection: Platform.OS === 'web' ? 'row' : 'column', flexWrap: 'wrap', marginHorizontal: -8, marginTop: 24 }}>
-              {featuredClips.map((clip) => (
-                <View key={clip.id} style={{ width: Platform.OS === 'web' ? '33.33%' : '100%', paddingHorizontal: 8, marginBottom: 16 }}>
-                  <View style={[styles.clipCard, { backgroundColor: isDark ? '#121214' : '#fff', borderColor: colors.border }]}>
-                    
-                    {/* Media Mockup */}
-                    <View style={{ height: 180, backgroundColor: '#000', borderRadius: 8, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', marginBottom: 14 }}>
-                      <Ionicons name="videocam" size={36} color={colors.primary + '80'} />
-                      <Text style={{ color: '#fff', fontSize: 11, marginTop: 6, fontWeight: '500' }}>{Math.floor(clip.end - clip.start)} Detik Durasi</Text>
+              <View style={{ flex: isWide ? 1 : undefined, marginTop: isWide ? 0 : 28, alignItems: 'center', justifyContent: 'center' }}>
+                <View style={styles.mockupWrapper}>
+                  <Image source={heroImage} style={styles.heroImg} />
+                  <View style={styles.glowOverlay} />
+                </View>
+              </View>
+            </View>
+          </FadeInView>
+
+          {/* CARA KERJA */}
+          <FadeInView delay={120}>
+            <View style={{ paddingHorizontal: isWide ? 24 : 16, marginTop: 40 }}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Cara Kerja Cepat</Text>
+              <Text style={[styles.sectionSub, { color: colors.muted }]}>Hanya 4 langkah mudah untuk mengunggah klip viral pertama Anda</Text>
+
+              <View style={{ flexDirection: isTablet ? 'row' : 'column', flexWrap: 'wrap', gap: 16, marginTop: 24 }}>
+                {steps.map((item, i) => (
+                  <LiftCard key={i} style={[styles.stepCard, card, { minWidth: isTablet ? 200 : undefined }]}>
+                    <View style={styles.stepBadge}>
+                      <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>{item.step}</Text>
                     </View>
+                    <Text style={[styles.stepTitle, { color: colors.text }]}>{item.title}</Text>
+                    <Text style={[styles.stepDesc, { color: colors.muted }]}>{item.desc}</Text>
+                  </LiftCard>
+                ))}
+              </View>
+            </View>
+          </FadeInView>
 
-                    <Text style={[styles.clipTitle, { color: colors.text }]} numberOfLines={1}>
-                      {clip.title}
-                    </Text>
-                    <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 14 }} numberOfLines={2}>
-                      {clip.reason || 'Klip highlight yang dihasilkan AI.'}
-                    </Text>
-                    
-                    <TouchableOpacity
-                      onPress={() => setPlayingClipId(clip.id)}
-                      style={styles.btnWatch}
-                    >
-                      <Ionicons name="play" size={14} color="#fff" />
-                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Tonton Klip</Text>
-                    </TouchableOpacity>
+          {/* FITUR UNGGULAN */}
+          <FadeInView delay={200}>
+            <View style={{ paddingHorizontal: isWide ? 24 : 16, marginTop: 48 }}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Fitur Unggulan Premium</Text>
+              <Text style={[styles.sectionSub, { color: colors.muted }]}>Dilengkapi teknologi pemrosesan video tercanggih saat ini</Text>
+
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -8, marginTop: 24 }}>
+                {features.map((f, i) => (
+                  <View key={i} style={{ width: cardWidth, paddingHorizontal: 8, marginBottom: 16 }}>
+                    <LiftCard style={[styles.featureCard, card]}>
+                      <View style={[styles.iconContainer, { backgroundColor: f.color + '15' }]}>
+                        <Ionicons name={f.icon as any} size={22} color={f.color} />
+                      </View>
+                      <Text style={[styles.featureTitle, { color: colors.text }]}>{f.title}</Text>
+                      <Text style={[styles.featureDesc, { color: colors.muted }]}>{f.desc}</Text>
+                    </LiftCard>
                   </View>
-                </View>
+                ))}
+              </View>
+            </View>
+          </FadeInView>
+
+          {/* FEATURED SHOWCASE CLIPS */}
+          {featuredClips.length > 0 && (
+            <View style={{ paddingHorizontal: isWide ? 24 : 16, marginTop: 48 }}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Contoh Klip Hasil AI</Text>
+              <Text style={[styles.sectionSub, { color: colors.muted }]}>Tonton beberapa video viral pilihan admin yang dibuat oleh sistem</Text>
+
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -8, marginTop: 24 }}>
+                {featuredClips.map((clip) => (
+                  <View key={clip.id} style={{ width: cardWidth, paddingHorizontal: 8, marginBottom: 16 }}>
+                    <LiftCard style={[styles.clipCard, card]}>
+                      <View style={styles.clipThumb}>
+                        <Ionicons name="videocam" size={36} color={colors.primary + '80'} />
+                        <Text style={{ color: '#fff', fontSize: 11, marginTop: 6, fontWeight: '500' }}>{Math.floor(clip.end - clip.start)} Detik Durasi</Text>
+                      </View>
+
+                      <Text style={[styles.clipTitle, { color: colors.text }]} numberOfLines={1}>
+                        {clip.title}
+                      </Text>
+                      <Text style={{ color: colors.muted, fontSize: 11, marginBottom: 14 }} numberOfLines={2}>
+                        {clip.reason || 'Klip highlight yang dihasilkan AI.'}
+                      </Text>
+
+                      <TouchableOpacity
+                        onPress={() => setPlayingClipId(clip.id)}
+                        style={styles.btnWatch}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="play" size={14} color="#fff" />
+                        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Tonton Klip</Text>
+                      </TouchableOpacity>
+                    </LiftCard>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* FOOTER */}
+          <View style={{ borderTopWidth: 1, borderTopColor: colors.border, marginTop: 60, paddingTop: 30, alignItems: 'center', paddingHorizontal: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 16, marginBottom: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {[
+                { name: 'FAQ', screen: 'FAQ' },
+                { name: 'Kebijakan Privasi', screen: 'Privacy' },
+                { name: 'Cookie', screen: 'Cookie' },
+                { name: 'Syarat & Ketentuan', screen: 'Terms' },
+                { name: 'Tentang', screen: 'About' },
+              ].map((link, i) => (
+                <TouchableOpacity key={i} onPress={() => navigation.navigate(link.screen)}>
+                  <Text style={{ color: '#8b5cf6', fontSize: 13, fontWeight: '600' }}>{link.name}</Text>
+                </TouchableOpacity>
               ))}
             </View>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>
+              &copy; 2026 AutoClipper. All rights reserved.
+            </Text>
           </View>
-        )}
 
-        {/* FOOTER */}
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.border, marginTop: 60, paddingTop: 30, alignItems: 'center' }}>
-          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 16 }}>
-            {[
-              { name: 'FAQ', screen: 'FAQ' },
-              { name: 'Kebijakan Privasi', screen: 'Privacy' },
-              { name: 'Cookie', screen: 'Cookie' },
-              { name: 'Syarat & Ketentuan', screen: 'Terms' },
-              { name: 'Tentang', screen: 'About' },
-            ].map((link, i) => (
-              <TouchableOpacity key={i} onPress={() => navigation.navigate(link.screen)}>
-                <Text style={{ color: '#8b5cf6', fontSize: 13, fontWeight: '600' }}>{link.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Text style={{ color: colors.muted, fontSize: 12 }}>
-            &copy; 2026 AutoClipper. All rights reserved.
-          </Text>
         </View>
-
       </ScrollView>
 
       {/* Video Player Modal Overlay */}
       {playingClipId !== null && (
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: isDark ? '#121214' : '#fff', borderColor: colors.border }]}>
+          <View style={[styles.modalCard, card]}>
             <View style={styles.modalHeader}>
               <Text style={{ fontWeight: '800', color: colors.text, fontSize: 16 }}>Showcase Video Player</Text>
               <TouchableOpacity onPress={() => setPlayingClipId(null)} style={{ padding: 4 }}>
@@ -240,9 +258,12 @@ export default function HomeScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    maxWidth: 1152,
+    alignSelf: 'center',
+  },
   heroContainer: {
-    margin: 24,
-    padding: 32,
     borderRadius: 20,
     borderWidth: 1,
     shadowColor: '#8b5cf6',
@@ -259,6 +280,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
     marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   badgeText: {
     color: '#8b5cf6',
@@ -266,9 +290,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   heroTitle: {
-    fontSize: 32,
     fontWeight: '800',
-    lineHeight: 42,
     marginBottom: 12,
   },
   heroSubtitle: {
@@ -334,7 +356,6 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 16,
     borderWidth: 1,
-    position: 'relative',
   },
   stepBadge: {
     width: 28,
@@ -382,6 +403,15 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 16,
     borderWidth: 1,
+  },
+  clipThumb: {
+    height: 180,
+    backgroundColor: '#000',
+    borderRadius: 8,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
   },
   clipTitle: {
     fontSize: 13,

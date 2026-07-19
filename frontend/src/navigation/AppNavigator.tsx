@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { NavigationContainer, getFocusedRouteNameFromRoute } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getVideo } from '../services/api';
 
@@ -23,46 +23,50 @@ import CheckoutScreen from '../screens/CheckoutScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { TabLayout } from './TabLayout';
 
-const Stack = createStackNavigator();
+// Catatan: pakai native-stack, bukan @react-navigation/stack.
+// CardSheet milik stack versi JS tidak membatasi tinggi konten di web,
+// sehingga ScrollView ikut melar dan halaman tidak pernah bisa di-scroll.
+const Stack = createNativeStackNavigator();
+const Tabs = createNativeStackNavigator();
 
 export function AppNavigator() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
 
   useEffect(() => {
     const pollInterval = setInterval(async () => {
       try {
         const apiKey = await AsyncStorage.getItem('api_key');
         if (!apiKey) return;
-        
+
         const activeJobsStr = await AsyncStorage.getItem('active_jobs');
         if (!activeJobsStr) return;
-        
+
         let activeJobs: number[] = JSON.parse(activeJobsStr);
         if (activeJobs.length === 0) return;
-        
+
         const updatedJobs: number[] = [...activeJobs];
-        
+
         for (const videoId of activeJobs) {
           const video = await getVideo(videoId).catch(() => null);
           if (!video) continue;
-          
+
           if (video.status === 'completed') {
-            alert(`🎉 Video "${video.title || 'Video YouTube'}" selesai diproses! Silakan periksa di menu Riwayat.`);
+            alert(`Video "${video.title || 'Video YouTube'}" selesai diproses. Silakan periksa di menu Riwayat.`);
             const index = updatedJobs.indexOf(videoId);
             if (index > -1) updatedJobs.splice(index, 1);
           } else if (video.status === 'failed') {
-            alert(`❌ Gagal memproses video: ${video.error_message || 'Terjadi kesalahan'}`);
+            alert(`Gagal memproses video: ${video.error_message || 'Terjadi kesalahan'}`);
             const index = updatedJobs.indexOf(videoId);
             if (index > -1) updatedJobs.splice(index, 1);
           }
         }
-        
+
         await AsyncStorage.setItem('active_jobs', JSON.stringify(updatedJobs));
       } catch (e) {
         console.error('Background polling error:', e);
       }
     }, 7000);
-    
+
     return () => clearInterval(pollInterval);
   }, []);
 
@@ -72,21 +76,30 @@ export function AppNavigator() {
         initialRouteName="Home"
         screenOptions={{
           headerShown: false,
-          cardStyle: { backgroundColor: colors.background },
+          contentStyle: { backgroundColor: colors.background },
         }}
       >
-        {/* Main Tabs (for Dashboard, CreateClip, History, Profile) */}
+        {/* Main Tabs (Dashboard, CreateClip, History, Profile) */}
         <Stack.Screen name="MainTabs" options={{ headerShown: false }}>
-          {({ navigation, route }) => (
-            <TabLayout routeName={route.name} navigation={navigation}>
-              <Stack.Navigator screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="Dashboard" component={DashboardScreen} />
-                <Stack.Screen name="CreateClip" component={CreateClipScreen} />
-                <Stack.Screen name="History" component={HistoryScreen} />
-                <Stack.Screen name="Profile" component={ProfileScreen} />
-              </Stack.Navigator>
-            </TabLayout>
-          )}
+          {({ navigation, route }) => {
+            const activeTab = getFocusedRouteNameFromRoute(route) ?? 'Dashboard';
+            return (
+              <TabLayout routeName={activeTab} navigation={navigation}>
+                <Tabs.Navigator
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: colors.background },
+                    animation: 'fade',
+                  }}
+                >
+                  <Tabs.Screen name="Dashboard" component={DashboardScreen} />
+                  <Tabs.Screen name="CreateClip" component={CreateClipScreen} />
+                  <Tabs.Screen name="History" component={HistoryScreen} />
+                  <Tabs.Screen name="Profile" component={ProfileScreen} />
+                </Tabs.Navigator>
+              </TabLayout>
+            );
+          }}
         </Stack.Screen>
 
         {/* Other screens (no bottom tabs) */}

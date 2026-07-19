@@ -35,12 +35,13 @@ class Video(Base):
     duration_seconds: Mapped[int] = mapped_column(sa.Integer, default=0)
     video_type: Mapped[str] = mapped_column(sa.String(50), default="general")
     status: Mapped[str] = mapped_column(sa.String(50), default="pending")
+    progress: Mapped[int] = mapped_column(sa.Integer, default=0)
     file_path: Mapped[str] = mapped_column(sa.Text, nullable=True)
     error_message: Mapped[str] = mapped_column(sa.Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.utcnow)
 
-    user = relationship("User", back_populates="videos")
-    clips = relationship("Clip", back_populates="video")
+    user = relationship("User", back_populates="videos", lazy="selectin")
+    clips = relationship("Clip", back_populates="video", lazy="selectin")
 
 class Clip(Base):
     __tablename__ = "clips"

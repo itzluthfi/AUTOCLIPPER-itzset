@@ -23,6 +23,11 @@ config.json
 cookies.txt
 settings.json
 error.log
+client_secret*.json
+*client_secret*.json
+*.db
+*.sqlite3
+data/
 
 # Output / temporary files
 output/

@@ -9,7 +9,7 @@ from app.config import DOWNLOAD_DIR, CLIPS_DIR, TEMP_DIR
 
 logger = logging.getLogger(__name__)
 
-async def download_video(youtube_url: str, video_id: str) -> Optional[str]:
+async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[str] = None) -> Optional[str]:
     """Download video dari YouTube, return path ke file"""
     output_path = os.path.join(DOWNLOAD_DIR, video_id)
     os.makedirs(output_path, exist_ok=True)
@@ -20,8 +20,10 @@ async def download_video(youtube_url: str, video_id: str) -> Optional[str]:
         "--write-subs", "--write-auto-subs",
         "--sub-langs", "en,id",
         "-o", os.path.join(output_path, "%(id)s.%(ext)s"),
-        youtube_url
     ]
+    if cookie_path and os.path.exists(cookie_path):
+        cmd.extend(["--cookies", cookie_path])
+    cmd.append(youtube_url)
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -37,8 +39,10 @@ async def download_video(youtube_url: str, video_id: str) -> Optional[str]:
                 "yt-dlp",
                 "-f", "best[height<=720]",
                 "-o", os.path.join(output_path, "%(id)s.%(ext)s"),
-                youtube_url
             ]
+            if cookie_path and os.path.exists(cookie_path):
+                cmd.extend(["--cookies", cookie_path])
+            cmd.append(youtube_url)
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -113,8 +117,16 @@ async def transcribe_audio(video_path: str, output_dir: str) -> Optional[str]:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        await proc.communicate(timeout=300)
-    except:
+        await asyncio.wait_for(proc.communicate(), timeout=600)
+    except asyncio.TimeoutError:
+        logger.error("Whisper transcription timed out")
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        return None
+    except Exception as e:
+        logger.error(f"Whisper failed: {e}")
         return None
 
     # Cari file srt hasil
@@ -152,20 +164,30 @@ async def clip_video(
 ) -> bool:
     """Klip video + tracking + subtitle"""
     duration = end - start
+    if duration <= 0:
+        logger.error(f"Invalid clip range: start={start} end={end}")
+        return False
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    if tracking == "face":
-        filter_complex = "[0:v]crop=ih*9/16:ih,scale=1080:1920[v]"
-        map_cmd = ["-map", "[v]", "-map", "0:a"]
-        vf_cmd = ["-vf", filter_complex]
+    # Satu rantai filter: crop 9:16 → scale. Subtitle digabung di rantai yang sama,
+    # karena ffmpeg hanya memakai -vf terakhir jika flag-nya dobel.
+    filters = ["crop=ih*9/16:ih", "scale=1080:1920"]
+    if add_subtitle and subtitle_path and os.path.exists(subtitle_path):
+        # Escape untuk filter ffmpeg: backslash, drive-colon (Windows), dan quote
+        escaped = subtitle_path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+        filters.append(f"subtitles='{escaped}'")
+
+    burn_subs = add_subtitle and subtitle_path and os.path.exists(subtitle_path)
+    if burn_subs:
+        # -ss SETELAH -i agar PTS asli dipertahankan dan timing subtitle tetap sinkron
+        seek_args = ["-i", video_path, "-ss", str(start)]
     else:
-        vf_cmd = ["-vf", "crop=ih*9/16:ih,scale=1080:1920"]
-        map_cmd = []
+        seek_args = ["-ss", str(start), "-i", video_path]
 
     cmd = [
-        "ffmpeg", "-ss", str(start), "-i", video_path,
+        "ffmpeg", *seek_args,
         "-t", str(min(duration, 60)),
-        *vf_cmd,
+        "-vf", ",".join(filters),
         "-c:v", "libx264",
         "-preset", "fast",
         "-crf", "23",
@@ -173,10 +195,6 @@ async def clip_video(
         "-b:a", "128k",
         "-y", output_path
     ]
-
-    if add_subtitle and subtitle_path and os.path.exists(subtitle_path):
-        cmd.insert(-1, "-vf")
-        cmd.insert(-1, f"subtitles={subtitle_path}")
 
     try:
         proc = await asyncio.create_subprocess_exec(
