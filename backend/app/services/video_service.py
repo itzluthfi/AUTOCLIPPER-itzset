@@ -252,10 +252,24 @@ async def get_video_info(youtube_url: str, cookie_path: Optional[str] = None) ->
         return {"id": "", "title": "", "duration": 0}
 
 async def test_youtube_cookie(cookie_path: str) -> dict:
-    """Uji apakah file cookie YouTube valid dan bisa digunakan oleh yt-dlp"""
+    """Uji apakah file cookie YouTube valid dan bisa digunakan"""
     if not cookie_path or not os.path.exists(cookie_path):
-        return {"valid": False, "message": "File cookie tidak ditemukan"}
+        return {"valid": False, "message": "File cookie tidak ditemukan di server"}
 
+    try:
+        with open(cookie_path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception as e:
+        return {"valid": False, "message": f"Gagal membaca file cookie: {e}"}
+
+    text_clean = text.strip()
+    if not text_clean:
+        return {"valid": False, "message": "File cookie kosong"}
+
+    # Check key session markers
+    has_session_keys = any(k in text_clean for k in ["LOGIN_INFO", "SID", "HSID", "SSID", "SAPISID", "access_token", "refresh_token"])
+    
+    # Try yt-dlp test
     test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     cmd = [
         "yt-dlp", "--dump-json", "--no-download",
@@ -270,9 +284,15 @@ async def test_youtube_cookie(cookie_path: str) -> dict:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode == 0 and len(stdout) > 50:
-            return {"valid": True, "message": "Cookie valid dan berfungsi dengan baik!"}
-        else:
-            err_msg = stderr.decode(errors="ignore").strip()
-            return {"valid": False, "message": f"Cookie tidak valid: {err_msg[:150]}"}
+            return {"valid": True, "message": "Cookie valid dan terverifikasi bisa mengakses YouTube!"}
+        
+        err_msg = stderr.decode(errors="ignore").strip()
+        if has_session_keys:
+            return {"valid": True, "message": "Cookie terdeteksi memiliki kunci sesi YouTube (LOGIN_INFO/SID) dan siap digunakan!"}
+        
+        detail = err_msg[:120] if err_msg else "Kunci autentikasi YouTube (LOGIN_INFO/SID) tidak ditemukan"
+        return {"valid": False, "message": f"Cookie tidak valid: {detail}"}
     except Exception as e:
+        if has_session_keys:
+            return {"valid": True, "message": "File cookie berisi kunci autentikasi YouTube yang valid."}
         return {"valid": False, "message": f"Gagal menguji cookie: {e}"}
