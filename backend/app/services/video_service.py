@@ -177,39 +177,59 @@ async def clip_video(
     subtitle_path: Optional[str] = None,
     hook: bool = False
 ) -> bool:
-    """Klip video + tracking + subtitle"""
+    """Klip video + tracking (Center / Face / Speaker Split-Screen) + subtitle"""
     duration = end - start
     if duration <= 0:
         logger.error(f"Invalid clip range: start={start} end={end}")
         return False
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    # Satu rantai filter: crop 9:16 → scale. Subtitle digabung di rantai yang sama,
-    # karena ffmpeg hanya memakai -vf terakhir jika flag-nya dobel.
-    filters = ["crop=ih*9/16:ih", "scale=1080:1920"]
+    # Menentukan rantai filter video berdasarkan mode tracking
+    if tracking == "speaker":
+        # Split-Screen Mode: Membagi video landscape menjadi 2 panel atas-bawah (9:16 stacked)
+        vf_filter = (
+            "[0:v]crop=iw/2:ih:0:0,scale=1080:960[top];"
+            "[0:v]crop=iw/2:ih:iw/2:0,scale=1080:960[bottom];"
+            "[top][bottom]vstack=inputs=2[v]"
+        )
+        filter_complex = True
+    else:
+        # Standard Single Focus (Center / Face Crop 9:16)
+        filters = ["crop=ih*9/16:ih", "scale=1080:1920"]
+        filter_complex = False
+
     if add_subtitle and subtitle_path and os.path.exists(subtitle_path):
-        # Escape untuk filter ffmpeg: backslash, drive-colon (Windows), dan quote
         escaped = subtitle_path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
-        filters.append(f"subtitles='{escaped}'")
+        sub_style = ":force_style='FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2'"
+        sub_filter = f"subtitles='{escaped}'{sub_style}"
+        if filter_complex:
+            vf_filter += f";[v]{sub_filter}[outv]"
+        else:
+            filters.append(sub_filter)
 
     burn_subs = add_subtitle and subtitle_path and os.path.exists(subtitle_path)
     if burn_subs:
-        # -ss SETELAH -i agar PTS asli dipertahankan dan timing subtitle tetap sinkron
         seek_args = ["-i", video_path, "-ss", str(start)]
     else:
         seek_args = ["-ss", str(start), "-i", video_path]
 
-    cmd = [
-        get_ffmpeg_cmd(), *seek_args,
-        "-t", str(min(duration, 60)),
-        "-vf", ",".join(filters),
+    cmd = [get_ffmpeg_cmd(), *seek_args, "-t", str(min(duration, 60))]
+
+    if filter_complex:
+        out_map = "[outv]" if burn_subs else "[v]"
+        cmd.extend(["-filter_complex", vf_filter, "-map", out_map, "-map", "0:a?"])
+    else:
+        cmd.extend(["-vf", ",".join(filters)])
+
+    # High Quality Render Parameters (-crf 19 untuk 1080p jernih, audio 192k)
+    cmd.extend([
         "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "23",
+        "-preset", "medium",
+        "-crf", "19",
         "-c:a", "aac",
-        "-b:a", "128k",
+        "-b:a", "192k",
         "-y", output_path
-    ]
+    ])
 
     try:
         returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
