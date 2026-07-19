@@ -103,41 +103,16 @@ export default function CreateClipScreen({ navigation }: any) {
               Cookie ini digunakan sebagai autentikasi ke YouTube.
             </Text>
             <TouchableOpacity
-              onPress={() => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '.json';
-                input.onchange = async (e: any) => {
-                  const file = e.target?.files?.[0];
-                  if (!file) return;
-                  const form = new FormData();
-                  form.append('file', file);
-                  try {
-                    const resp = await fetch(`${API_BASE}/cookie/upload`, {
-                      method: 'POST',
-                      headers: { 'X-API-Key': (await loadApiKey()) || '' },
-                      body: form,
-                    });
-                    const json = await resp.json();
-                    if (json.status === 'ok') {
-                      alert('Cookie berhasil diupload!');
-                      setHasCookie(true);
-                    } else {
-                      alert(json.detail || 'Gagal upload cookie');
-                    }
-                  } catch (e) {
-                    alert('Gagal upload cookie');
-                  }
-                };
-                input.click();
-              }}
+              onPress={() => navigation.navigate('Profile')}
               style={{
                 paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8,
                 backgroundColor: colors.primary, alignSelf: 'flex-start',
+                flexDirection: 'row', alignItems: 'center', gap: 6,
               }}
             >
+              <Ionicons name="key-outline" size={16} color="#fff" />
               <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>
-                Upload Cookie di Profile
+                ⚡ Setup Cookie YouTube di Profil (.txt / Paste)
               </Text>
             </TouchableOpacity>
           </View>
