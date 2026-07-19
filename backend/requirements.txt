@@ -1,0 +1,16 @@
+# Desktop App Dependencies
+customtkinter>=5.2.0
+openai>=1.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
+mediapipe>=0.10.0
+requests>=2.31.0
+yt-dlp>=2026.3.17
+curl-cffi>=0.14.0
+gTTS>=2.3.0
+
+# YouTube Upload
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1

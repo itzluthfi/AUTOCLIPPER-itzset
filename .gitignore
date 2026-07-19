@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.expo/
+*.pyc
+__pycache__/
+.env
+*.egg-info/
+.venv/
+venv/

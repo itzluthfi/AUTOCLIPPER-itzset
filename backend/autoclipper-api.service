@@ -1,0 +1,15 @@
+[Unit]
+Description=AutoClipper FastAPI Backend
+After=network.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=hermes
+WorkingDirectory=/var/www/autoclipper.sir-l.web.id/backend
+Environment=PYTHONPATH=/var/www/autoclipper.sir-l.web.id/backend
+ExecStart=/var/www/autoclipper.sir-l.web.id/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

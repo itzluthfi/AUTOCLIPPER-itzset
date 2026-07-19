@@ -1,0 +1,17 @@
+[Unit]
+Description=AutoClipper Celery Worker
+After=redis-server.service postgresql.service
+
+[Service]
+Type=simple
+User=hermes
+WorkingDirectory=/var/www/autoclipper.sir-l.web.id/backend
+Environment=PYTHONPATH=/var/www/autoclipper.sir-l.web.id/backend
+ExecStart=/var/www/autoclipper.sir-l.web.id/backend/venv/bin/celery -A app.workers.tasks worker --loglevel=info --concurrency=1
+Restart=always
+RestartSec=10
+MemoryMax=1500M
+CPUQuota=80%
+
+[Install]
+WantedBy=multi-user.target
