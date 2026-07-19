@@ -7,3 +7,33 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+# VS Code
+.vscode/
+
+# Binaries and tools
+bin/
+ffmpeg/
+deno.exe
+ffmpeg.exe
+ffplay.exe
+ffprobe.exe
+
+# Project local config and secrets
+config.json
+cookies.txt
+settings.json
+error.log
+
+# Output / temporary files
+output/
+_temp/
+session_data.json
+*.log
+
+# Media and generated files
+*.mp4
+*.mov
+*.srt
+
+# Assets generated or user-specific
+assets/
