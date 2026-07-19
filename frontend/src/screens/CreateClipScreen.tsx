@@ -192,7 +192,7 @@ export default function CreateClipScreen({ navigation }: any) {
         }}>
           {[
             { key: 'heuristic' as const, label: 'Heuristic', icon: 'flash', desc: 'Cepat, gratis' },
-            { key: 'ai' as const, label: 'AI', icon: 'brain', desc: 'Akurat, 1 credit' },
+            { key: 'ai' as const, label: 'AI', icon: 'sparkles', desc: 'Akurat, 1 credit' },
           ].map(m => (
             <TouchableOpacity
               key={m.key}
@@ -224,7 +224,7 @@ export default function CreateClipScreen({ navigation }: any) {
         }}>
           {[
             { key: 'center' as const, label: 'Center', icon: 'crop' },
-            { key: 'face' as const, label: 'Face', icon: 'face' },
+            { key: 'face' as const, label: 'Face', icon: 'person' },
             { key: 'speaker' as const, label: 'Speaker', icon: 'volume-high' },
           ].map(t => (
             <TouchableOpacity
