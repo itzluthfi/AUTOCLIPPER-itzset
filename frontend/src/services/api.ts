@@ -130,3 +130,29 @@ export async function createCheckout(credits: number, amount: number): Promise<{
     body: JSON.stringify({ credits, amount }),
   });
 }
+
+export async function loginWithPassword(email: string, password: string): Promise<{ status: string; api_key: string; user: any }> {
+  const resp = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: 'Login gagal' }));
+    throw new Error(err.detail || 'Email atau password salah');
+  }
+  return resp.json();
+}
+
+export async function registerWithPassword(name: string, email: string, password: string): Promise<{ status: string; api_key: string; user: any }> {
+  const resp = await fetch(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, password }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: 'Registrasi gagal' }));
+    throw new Error(err.detail || 'Registrasi gagal');
+  }
+  return resp.json();
+}

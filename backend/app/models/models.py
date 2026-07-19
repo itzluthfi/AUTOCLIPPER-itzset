@@ -16,6 +16,7 @@ class User(Base):
     credits: Mapped[int] = mapped_column(sa.Integer, default=3)
     role: Mapped[str] = mapped_column(sa.String(50), default="free")
     api_key: Mapped[str] = mapped_column(sa.String(255), nullable=True)
+    password_hash: Mapped[str] = mapped_column(sa.String(255), nullable=True)
     cookie_path: Mapped[str] = mapped_column(sa.Text, nullable=True)
     tokens_json: Mapped[str] = mapped_column(sa.Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.utcnow)

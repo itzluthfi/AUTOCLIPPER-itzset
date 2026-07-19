@@ -49,6 +49,95 @@ async def require_admin(user: User = Depends(get_current_user)):
         raise HTTPException(403, "Admin only")
     return user
 
+# ─── Auth Models & Endpoints ────────────────────────────────────
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+def hash_password(password: str) -> str:
+    import hashlib
+    return hashlib.sha256(f"autoclipper_salt_{password}".encode()).hexdigest()
+
+@router.post("/auth/register")
+async def register_user(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    if not data.email or not data.password or not data.name:
+        raise HTTPException(400, "Nama, email, dan password wajib diisi")
+        
+    email_clean = data.email.strip().lower()
+    
+    res = await db.execute(select(User).where(User.email == email_clean))
+    existing_user = res.scalar_one_or_none()
+    if existing_user:
+        raise HTTPException(400, "Email sudah terdaftar. Silakan login.")
+        
+    import secrets
+    raw_api_key = f"ac_{secrets.token_hex(16)}"
+    hashed_key = hash_api_key(raw_api_key)
+    pwd_hash = hash_password(data.password)
+    
+    new_user = User(
+        name=data.name.strip(),
+        email=email_clean,
+        role="user",
+        password_hash=pwd_hash,
+        api_key=hashed_key,
+        credits=5
+    )
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+    
+    return {
+        "status": "ok",
+        "message": "Registrasi berhasil",
+        "api_key": raw_api_key,
+        "user": {
+            "id": new_user.id,
+            "name": new_user.name,
+            "email": new_user.email,
+            "role": new_user.role,
+            "credits": new_user.credits
+        }
+    }
+
+@router.post("/auth/login")
+async def login_user(data: LoginRequest, db: AsyncSession = Depends(get_db)):
+    if not data.email or not data.password:
+        raise HTTPException(400, "Email dan password wajib diisi")
+        
+    email_clean = data.email.strip().lower()
+    pwd_hash = hash_password(data.password)
+    
+    res = await db.execute(select(User).where(User.email == email_clean))
+    user = res.scalar_one_or_none()
+    
+    if not user or user.password_hash != pwd_hash:
+        raise HTTPException(400, "Email atau password salah")
+        
+    import secrets
+    raw_api_key = f"ac_{secrets.token_hex(16)}"
+    user.api_key = hash_api_key(raw_api_key)
+    await db.commit()
+    
+    return {
+        "status": "ok",
+        "message": "Login berhasil",
+        "api_key": raw_api_key,
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role,
+            "credits": user.credits
+        }
+    }
+
 # ─── Google OAuth ────────────────────────────────────────────────
 
 @router.get("/auth/google/login")
