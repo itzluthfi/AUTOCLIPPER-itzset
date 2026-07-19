@@ -159,13 +159,13 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
 
             thumb_path = os.path.join(CLIPS_DIR, f"thumb_{video_id}_{i}.jpg")
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    "ffmpeg", "-y", "-i", clip_path, "-ss", "00:00:01",
-                    "-vframes", "1", thumb_path,
-                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                )
-                await proc.communicate()
-                if proc.returncode != 0 or not os.path.exists(thumb_path):
+                from app.services.video_service import get_ffmpeg_cmd, _run_cmd_sync
+                cmd_thumb = [
+                    get_ffmpeg_cmd(), "-y", "-i", clip_path, "-ss", "00:00:01",
+                    "-vframes", "1", thumb_path
+                ]
+                returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd_thumb)
+                if returncode != 0 or not os.path.exists(thumb_path):
                     thumb_path = None
             except Exception as e:
                 logger.error(f"Gagal generate thumbnail: {e}")

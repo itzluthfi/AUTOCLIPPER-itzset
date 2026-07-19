@@ -24,6 +24,20 @@ def get_ytdlp_cmd() -> list[str]:
         
     return [sys.executable, "-m", "yt_dlp"]
 
+def get_ffmpeg_cmd() -> str:
+    """Cari path executable ffmpeg di imageio_ffmpeg, system PATH, atau fallback ke 'ffmpeg'"""
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+
+    which_cmd = shutil.which("ffmpeg")
+    if which_cmd:
+        return which_cmd
+
+    return "ffmpeg"
+
 def _run_cmd_sync(cmd: list[str]) -> tuple[int, bytes, bytes]:
     """Jalankan subprocess secara sinkron yang aman dari NotImplementedError di Windows asyncio"""
     res = subprocess.run(
@@ -103,17 +117,12 @@ async def transcribe_audio(video_path: str, output_dir: str) -> Optional[str]:
 
     # Ekstrak audio
     cmd = [
-        "ffmpeg", "-i", video_path,
+        get_ffmpeg_cmd(), "-i", video_path,
         "-vn", "-acodec", "libmp3lame",
         "-ar", "16000", "-ac", "1",
         "-y", audio_path
     ]
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    await proc.communicate()
+    await asyncio.to_thread(_run_cmd_sync, cmd)
 
     if not os.path.exists(audio_path):
         return None
@@ -130,19 +139,7 @@ async def transcribe_audio(video_path: str, output_dir: str) -> Optional[str]:
     ]
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await asyncio.wait_for(proc.communicate(), timeout=600)
-    except asyncio.TimeoutError:
-        logger.error("Whisper transcription timed out")
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
-        return None
+        await asyncio.to_thread(_run_cmd_sync, cmd)
     except Exception as e:
         logger.error(f"Whisper failed: {e}")
         return None
@@ -203,7 +200,7 @@ async def clip_video(
         seek_args = ["-ss", str(start), "-i", video_path]
 
     cmd = [
-        "ffmpeg", *seek_args,
+        get_ffmpeg_cmd(), *seek_args,
         "-t", str(min(duration, 60)),
         "-vf", ",".join(filters),
         "-c:v", "libx264",
@@ -215,14 +212,9 @@ async def clip_video(
     ]
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        _, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            logger.error(f"ffmpeg failed: {stderr.decode()}")
+        returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
+        if returncode != 0:
+            logger.error(f"ffmpeg failed: {stderr.decode(errors='ignore')}")
             return False
         return os.path.exists(output_path)
     except Exception as e:
