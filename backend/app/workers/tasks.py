@@ -131,7 +131,7 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
         if use_ai and transcript:
             moments = await detect_highlights(transcript, info.get("title", ""), duration)
         else:
-            moments = _fallback_heuristic(transcript)
+            moments = _fallback_heuristic(transcript, duration)
         moments = _clamp_moments(moments, duration)
         if not moments:
             moments = _clamp_moments(

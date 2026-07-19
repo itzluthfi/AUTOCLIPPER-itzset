@@ -14,7 +14,7 @@ if NOVITA_API_KEY:
 
 async def detect_highlights(transcript: str, title: str = "", duration: int = 0) -> list[dict]:
     if not client:
-        return _fallback_heuristic(transcript)
+        return _fallback_heuristic(transcript, duration)
 
     prompt = f"""Kamu adalah asisten yang membantu memilih momen penting dari transcript video YouTube untuk dibuat video short (30-60 detik).
 
@@ -44,12 +44,12 @@ Format JSON array saja, tanpa markdown:
         # Bersihin markdown code block
         text = text.replace("```json", "").replace("```", "").strip()
         moments = json.loads(text)
-        if isinstance(moments, list):
+        if isinstance(moments, list) and len(moments) > 0:
             return moments
-        return _fallback_heuristic(transcript)
+        return _fallback_heuristic(transcript, duration)
     except Exception as e:
         logger.error(f"AI highlight detection failed: {e}")
-        return _fallback_heuristic(transcript)
+        return _fallback_heuristic(transcript, duration)
 
 async def generate_title(transcript: str, video_title: str) -> str:
     if not client:
@@ -72,13 +72,13 @@ Buat 1 judul pendek (max 60 karakter) dalam bahasa Indonesia:"""
     except:
         return f"Klip dari: {video_title[:100]}"
 
-def _fallback_heuristic(transcript: str) -> list[dict]:
-    """Heuristic: bagi transcript ke segmen-segmen berdasarkan kata kunci"""
+def _fallback_heuristic(transcript: str, duration: int = 0) -> list[dict]:
+    """Heuristic: segmen berdasarkan kata kunci atau interval waktu video"""
     keywords = ["best", "amazing", "wow", "important", "watch this", "wait for it",
                 "let me show", "check this", "first", "finally", "kesimpulan", "penting",
                 "menarik", "luar biasa", "kunci", "utama", "tips", "rahasia"]
 
-    lines = transcript.split("\n")
+    lines = [l.strip() for l in transcript.split("\n") if l.strip()]
     segments = []
     for i, line in enumerate(lines):
         score = 0
@@ -97,11 +97,17 @@ def _fallback_heuristic(transcript: str) -> list[dict]:
         moments.append({
             "start": max(0, seg["index"] * 5),
             "end": min(seg["index"] * 5 + 45, seg["index"] * 5 + 60),
-            "reason": f"Momen dengan skor {seg['score']}: {seg['text'][:50]}..."
+            "reason": f"Momen menarik: {seg['text'][:50]}..."
         })
 
-    if not moments:
-        moments.append({"start": 10, "end": 60, "reason": "Pembukaan video"})
-        moments.append({"start": max(0, len(lines) * 5 // 2), "end": max(0, len(lines) * 5 // 2 + 50), "reason": "Tengah video"})
+    # Jika momen kurang dari 3, buat variasi interval otomatis berdasarkan durasi video
+    if len(moments) < 3:
+        dur = max(duration, 180)
+        interval = max(45, dur // 4)
+        moments = [
+            {"start": 5, "end": min(dur, 50), "reason": "Highlights Pembukaan Video"},
+            {"start": min(dur - 60, interval), "end": min(dur - 15, interval + 45), "reason": "Highlights Momen Kunci Video"},
+            {"start": min(dur - 50, interval * 2), "end": min(dur - 5, interval * 2 + 45), "reason": "Highlights Momen Klimaks Video"},
+        ]
 
     return moments[:5]
