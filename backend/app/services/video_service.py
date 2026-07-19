@@ -24,6 +24,16 @@ def get_ytdlp_cmd() -> list[str]:
         
     return [sys.executable, "-m", "yt_dlp"]
 
+def _run_cmd_sync(cmd: list[str]) -> tuple[int, bytes, bytes]:
+    """Jalankan subprocess secara sinkron yang aman dari NotImplementedError di Windows asyncio"""
+    res = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    )
+    return res.returncode, res.stdout, res.stderr
+
 async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[str] = None) -> Optional[str]:
     """Download video dari YouTube, return path ke file"""
     output_path = os.path.join(DOWNLOAD_DIR, video_id)
@@ -41,14 +51,9 @@ async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[
     cmd.append(youtube_url)
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        _, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            logger.error(f"yt-dlp failed: {stderr.decode()}")
+        returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
+        if returncode != 0:
+            logger.error(f"yt-dlp failed: {stderr.decode(errors='ignore')}")
             # Coba tanpa subtitle
             cmd = [
                 *get_ytdlp_cmd(),
@@ -58,14 +63,9 @@ async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[
             if cookie_path and os.path.exists(cookie_path):
                 cmd.extend(["--cookies", cookie_path])
             cmd.append(youtube_url)
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            _, stderr = await proc.communicate()
-            if proc.returncode != 0:
-                logger.error(f"yt-dlp retry failed: {stderr.decode()}")
+            returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
+            if returncode != 0:
+                logger.error(f"yt-dlp retry failed: {stderr.decode(errors='ignore')}")
                 return None
     except Exception as e:
         logger.error(f"yt-dlp error: {e}")
@@ -237,34 +237,57 @@ async def get_video_info(youtube_url: str, cookie_path: Optional[str] = None) ->
     cmd.append(youtube_url)
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0 and cookie_path and os.path.exists(cookie_path):
-            # Try once without cookie if failed
-            proc2 = await asyncio.create_subprocess_exec(
-                *get_ytdlp_cmd(), "--dump-json", "--no-download", youtube_url,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await proc2.communicate()
+        returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
+        
+        # 1. Coba baca JSON dari stdout langsung jika ada
+        text = stdout.decode("utf-8", errors="ignore").strip()
+        if text.startswith("{"):
+            try:
+                import json
+                info = json.loads(text)
+                if info.get("id"):
+                    return {
+                        "id": str(info.get("id", "") or ""),
+                        "title": str(info.get("title", "") or ""),
+                        "description": str(info.get("description", "") or ""),
+                        "duration": info.get("duration", 0) or 0,
+                        "category": info.get("categories", [None])[0] if info.get("categories") else None,
+                        "tags": info.get("tags", []),
+                        "thumbnail": str(info.get("thumbnail", "") or ""),
+                        "error": None,
+                    }
+            except Exception:
+                pass
 
-        import json
-        info = json.loads(stdout)
-        return {
-            "id": info.get("id", ""),
-            "title": info.get("title", ""),
-            "description": info.get("description", ""),
-            "duration": info.get("duration", 0),
-            "category": info.get("categories", [None])[0] if info.get("categories") else None,
-            "tags": info.get("tags", []),
-            "thumbnail": info.get("thumbnail", ""),
-        }
+        # 2. Jika dengan cookie gagal, coba tanpa cookie sebagai fallback
+        if cookie_path and os.path.exists(cookie_path):
+            cmd2 = [*get_ytdlp_cmd(), "--dump-json", "--no-download", youtube_url]
+            returncode2, stdout2, stderr2 = await asyncio.to_thread(_run_cmd_sync, cmd2)
+            text2 = stdout2.decode("utf-8", errors="ignore").strip()
+            if text2.startswith("{"):
+                try:
+                    import json
+                    info = json.loads(text2)
+                    if info.get("id"):
+                        return {
+                            "id": str(info.get("id", "") or ""),
+                            "title": str(info.get("title", "") or ""),
+                            "description": str(info.get("description", "") or ""),
+                            "duration": info.get("duration", 0) or 0,
+                            "category": info.get("categories", [None])[0] if info.get("categories") else None,
+                            "tags": info.get("tags", []),
+                            "thumbnail": str(info.get("thumbnail", "") or ""),
+                            "error": None,
+                        }
+                except Exception:
+                    pass
+
+        err_text = stderr.decode("utf-8", errors="ignore").strip()
+        return {"id": "", "title": "", "duration": 0, "error": err_text[:200]}
+
     except Exception as e:
-        logger.error(f"yt-dlp info failed: {e}")
-        return {"id": "", "title": "", "duration": 0}
+        logger.error(f"yt-dlp info failed: {repr(e)}")
+        return {"id": "", "title": "", "duration": 0, "error": str(e)}
 
 async def test_youtube_cookie(cookie_path: str) -> dict:
     """Uji apakah file cookie YouTube valid dan bisa digunakan"""
@@ -292,13 +315,8 @@ async def test_youtube_cookie(cookie_path: str) -> dict:
         test_url
     ]
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode == 0 and len(stdout) > 50:
+        returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
+        if returncode == 0 and len(stdout) > 50:
             return {"valid": True, "message": "Cookie valid dan terverifikasi bisa mengakses YouTube!"}
         
         err_msg = stderr.decode(errors="ignore").strip()
