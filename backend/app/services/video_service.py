@@ -2,6 +2,8 @@ import os
 import asyncio
 import logging
 import subprocess
+import sys
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -9,13 +11,26 @@ from app.config import DOWNLOAD_DIR, CLIPS_DIR, TEMP_DIR
 
 logger = logging.getLogger(__name__)
 
+def get_ytdlp_cmd() -> list[str]:
+    """Cari command executable yt-dlp yang valid (termasuk fallback via python -m yt_dlp)"""
+    which_cmd = shutil.which("yt-dlp")
+    if which_cmd:
+        return [which_cmd]
+        
+    venv_dir = os.path.dirname(sys.executable)
+    ytdlp_venv = os.path.join(venv_dir, "yt-dlp.exe" if sys.platform == "win32" else "yt-dlp")
+    if os.path.exists(ytdlp_venv):
+        return [ytdlp_venv]
+        
+    return [sys.executable, "-m", "yt_dlp"]
+
 async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[str] = None) -> Optional[str]:
     """Download video dari YouTube, return path ke file"""
     output_path = os.path.join(DOWNLOAD_DIR, video_id)
     os.makedirs(output_path, exist_ok=True)
 
     cmd = [
-        "yt-dlp",
+        *get_ytdlp_cmd(),
         "-f", "best[height<=720]",
         "--write-subs", "--write-auto-subs",
         "--sub-langs", "en,id",
@@ -36,7 +51,7 @@ async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[
             logger.error(f"yt-dlp failed: {stderr.decode()}")
             # Coba tanpa subtitle
             cmd = [
-                "yt-dlp",
+                *get_ytdlp_cmd(),
                 "-f", "best[height<=720]",
                 "-o", os.path.join(output_path, "%(id)s.%(ext)s"),
             ]
@@ -214,7 +229,7 @@ async def clip_video(
 async def get_video_info(youtube_url: str, cookie_path: Optional[str] = None) -> dict:
     """Ambil metadata video dari YouTube (dengan opsional cookie_path)"""
     cmd = [
-        "yt-dlp", "--dump-json",
+        *get_ytdlp_cmd(), "--dump-json",
         "--no-download",
     ]
     if cookie_path and os.path.exists(cookie_path):
@@ -231,7 +246,7 @@ async def get_video_info(youtube_url: str, cookie_path: Optional[str] = None) ->
         if proc.returncode != 0 and cookie_path and os.path.exists(cookie_path):
             # Try once without cookie if failed
             proc2 = await asyncio.create_subprocess_exec(
-                "yt-dlp", "--dump-json", "--no-download", youtube_url,
+                *get_ytdlp_cmd(), "--dump-json", "--no-download", youtube_url,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
             stdout, _ = await proc2.communicate()
@@ -272,7 +287,7 @@ async def test_youtube_cookie(cookie_path: str) -> dict:
     # Try yt-dlp test
     test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     cmd = [
-        "yt-dlp", "--dump-json", "--no-download",
+        *get_ytdlp_cmd(), "--dump-json", "--no-download",
         "--cookies", cookie_path,
         test_url
     ]
