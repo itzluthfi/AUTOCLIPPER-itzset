@@ -38,6 +38,7 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)",
         "ALTER TABLE videos ADD COLUMN progress INTEGER DEFAULT 0",
         "ALTER TABLE videos ADD COLUMN current_step_log VARCHAR(500)",
+        "ALTER TABLE videos ADD COLUMN priority INTEGER DEFAULT 0",
     ]:
         try:
             async with engine.begin() as conn:
