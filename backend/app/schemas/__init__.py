@@ -26,6 +26,7 @@ class SubmitURL(BaseModel):
     url: str = Field(min_length=10, max_length=500)
     mode: str = Field(default="heuristic", pattern="^(heuristic|ai)$")
     tracking: str = Field(default="auto", pattern="^(center|face|speaker|auto|mix|none)$")
+    aspect_ratio: Optional[str] = Field(default="9:16_crop", pattern="^(9:16_crop|9:16_blur|16:9)$")
     num_clips: Optional[int] = Field(default=5, ge=1, le=10)
     sub_lang: Optional[str] = Field(default="id")
 

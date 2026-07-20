@@ -291,12 +291,13 @@ async def clip_video(
     end: float,
     segments: Optional[list[dict]] = None,
     tracking: str = "none",
+    aspect_ratio: str = "9:16_crop",
     add_subtitle: bool = False,
     subtitle_path: Optional[str] = None,
     title: Optional[str] = None,
     sub_lang: str = "id"
 ) -> bool:
-    """Klip video + Multi-Segment Connected Merge + tracking cerdas (Auto Mix / Face / Speaker Split) + subtitle + Hook Title Overlay"""
+    """Klip video + Multi-Aspect Ratio (9:16 Crop, 9:16 Blur Background, 16:9 Landscape) + Tracking + Subtitle + Hook Title Overlay"""
     duration = end - start
     if duration <= 0:
         logger.error(f"Invalid clip range: start={start} end={end}")
@@ -351,17 +352,32 @@ async def clip_video(
     else:
         current_label = source_v_label
 
-    # 2. Tahap Framing / Crop (Split-Screen 2 Orang vs Face Track 9:16)
-    if is_speaker_split:
+    # 2. Tahap Framing & Aspect Ratio
+    if aspect_ratio == "16:9":
+        # Full Landscape Horizontal (Original 16:9 tanpa crop)
+        video_chain.append(f"[{current_label}]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2[vframe]")
+        current_label = "vframe"
+    elif aspect_ratio == "9:16_blur":
+        # Video Landscape Utuh di Tengah Frame Vertikal 9:16 + Blurred Background
         video_chain.append(
-            f"[{current_label}]crop=iw/2:ih:0:0,scale=1080:960[vtop];"
-            f"[{current_label}]crop=iw/2:ih:iw/2:0,scale=1080:960[vbot];"
-            f"[vtop][vbot]vstack=inputs=2[vframe]"
+            f"[{current_label}]split[vbg][vfg];"
+            f"[vbg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:10[vblur];"
+            f"[vfg]scale=1080:607:force_original_aspect_ratio=decrease[vmain];"
+            f"[vblur][vmain]overlay=(W-w)/2:(H-h)/2[vframe]"
         )
         current_label = "vframe"
     else:
-        video_chain.append(f"[{current_label}]crop=ih*9/16:ih,scale=1080:1920[vframe]")
-        current_label = "vframe"
+        # Default: 9:16 Crop Vertikal (Split-Screen Podcast vs Face Track 9:16)
+        if is_speaker_split:
+            video_chain.append(
+                f"[{current_label}]crop=iw/2:ih:0:0,scale=1080:960[vtop];"
+                f"[{current_label}]crop=iw/2:ih:iw/2:0,scale=1080:960[vbot];"
+                f"[vtop][vbot]vstack=inputs=2[vframe]"
+            )
+            current_label = "vframe"
+        else:
+            video_chain.append(f"[{current_label}]crop=ih*9/16:ih,scale=1080:1920[vframe]")
+            current_label = "vframe"
 
     stage = 0
     def _chain_filter(filter_str: str):

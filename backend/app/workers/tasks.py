@@ -88,6 +88,7 @@ def _clamp_moments(moments: list, duration: int, num_clips: int = 5) -> list:
 
 async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                                mode: str = "heuristic", tracking: str = "auto",
+                               aspect_ratio: str = "9:16_crop",
                                num_clips: int = 5, sub_lang: str = "id"):
     from sqlalchemy import select
     from app.models.models import Video, Clip, User, CreditTransaction, SystemSetting
@@ -218,6 +219,7 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                 end=moment["end"],
                 segments=moment.get("segments"),
                 tracking=tracking,
+                aspect_ratio=aspect_ratio,
                 add_subtitle=bool(sub_path),
                 subtitle_path=sub_path,
                 title=clean_clip_title,
@@ -311,14 +313,16 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
 
 def run_process_video(video_id: int, youtube_url: str, user_id: int,
                       mode: str = "heuristic", tracking: str = "auto",
+                      aspect_ratio: str = "9:16_crop",
                       num_clips: int = 5, sub_lang: str = "id"):
     """Entry point sinkron — dipakai Celery task maupun thread fallback lokal."""
-    return asyncio.run(_process_video_async(video_id, youtube_url, user_id, mode, tracking, num_clips, sub_lang))
+    return asyncio.run(_process_video_async(video_id, youtube_url, user_id, mode, tracking, aspect_ratio, num_clips, sub_lang))
 
 
 @celery_app.task(name="process_video")
 def process_video(video_id: int, youtube_url: str, user_id: int,
                   mode: str = "heuristic", tracking: str = "auto",
+                  aspect_ratio: str = "9:16_crop",
                   num_clips: int = 5, sub_lang: str = "id"):
     """Proses video: download → subtitle → deteksi highlight → clip → simpan → cleanup."""
-    return run_process_video(video_id, youtube_url, user_id, mode, tracking, num_clips, sub_lang)
+    return run_process_video(video_id, youtube_url, user_id, mode, tracking, aspect_ratio, num_clips, sub_lang)

@@ -24,6 +24,7 @@ export default function CreateClipScreen({ navigation }: any) {
   const [mode, setMode] = useState<'heuristic' | 'ai'>('heuristic');
   const [tracking, setTracking] = useState<'auto' | 'center' | 'face' | 'speaker'>('auto');
   const [subLang, setSubLang] = useState<'id' | 'en' | 'auto'>('id');
+  const [aspectRatio, setAspectRatio] = useState<'9:16_crop' | '9:16_blur' | '16:9'>('9:16_crop');
   const [numClips, setNumClips] = useState<number>(5);
   const [autoDetecting, setAutoDetecting] = useState<boolean>(false);
   const [autoReason, setAutoReason] = useState<string | null>(null);
@@ -107,15 +108,15 @@ export default function CreateClipScreen({ navigation }: any) {
     setAutoDetecting(true);
     setAutoReason(null);
     try {
-      const res = await autoPresetVideo(url.trim());
-      if (res.preset) {
-        if (res.preset.mode) setMode(res.preset.mode);
-        if (res.preset.tracking) setTracking(res.preset.tracking);
-        if (res.preset.num_clips) setNumClips(res.preset.num_clips);
-        setAutoReason(res.preset.reason || 'Saran otomatis dari AI berhasil diterapkan!');
+      const result = await autoPresetVideo(url.trim());
+      if (result.preset) {
+        if (result.preset.mode) setMode(result.preset.mode);
+        if (result.preset.tracking) setTracking(result.preset.tracking);
+        if (result.preset.num_clips) setNumClips(result.preset.num_clips);
+        if (result.preset.reason) setAutoReason(result.preset.reason);
       }
     } catch (e: any) {
-      Alert.alert('Info', 'Gagal membaca metadata otomatis. Menampilkan preset standar.');
+      console.error(e.message);
     } finally {
       setAutoDetecting(false);
     }
@@ -133,7 +134,7 @@ export default function CreateClipScreen({ navigation }: any) {
     }
     setLoading(true);
     try {
-      const result = await submitVideo(url.trim(), mode, tracking, numClips, subLang);
+      const result = await submitVideo(url.trim(), mode, tracking, numClips, subLang, aspectRatio);
       try {
         const activeJobsStr = await AsyncStorage.getItem('active_jobs');
         const activeJobs = activeJobsStr ? JSON.parse(activeJobsStr) : [];
@@ -449,6 +450,41 @@ export default function CreateClipScreen({ navigation }: any) {
               <Ionicons name={l.icon as any} size={14} color={subLang === l.key ? colors.primary : colors.muted} />
               <Text style={{ fontWeight: '600', color: subLang === l.key ? colors.primary : colors.text, fontSize: 11 }}>
                 {l.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Aspect Ratio & Frame Layout Selector */}
+        <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
+          Format & Orientation Output Video
+        </Text>
+        <View style={{
+          flexDirection: 'row', gap: 8, marginBottom: 20,
+          padding: 12, borderRadius: 12,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+        }}>
+          {[
+            { key: '9:16_crop' as const, label: '9:16 Crop Vertikal', icon: 'crop-outline', desc: 'Shorts / TikTok (Crop & Face Track)' },
+            { key: '9:16_blur' as const, label: '9:16 Blur Background', icon: 'phone-portrait-outline', desc: 'Landscape Utuh di Frame Vertikal' },
+            { key: '16:9' as const, label: '16:9 Full Landscape', icon: 'tv-outline', desc: 'Format Horizontal Asli' },
+          ].map(ar => (
+            <TouchableOpacity
+              key={ar.key}
+              onPress={() => setAspectRatio(ar.key)}
+              style={{
+                flex: 1, padding: 8, borderRadius: 8,
+                backgroundColor: aspectRatio === ar.key ? colors.primary + '20' : 'transparent',
+                borderWidth: 1, borderColor: aspectRatio === ar.key ? colors.primary : colors.border,
+                alignItems: 'center',
+              }}
+            >
+              <Ionicons name={ar.icon as any} size={16} color={aspectRatio === ar.key ? colors.primary : colors.muted} />
+              <Text style={{ fontWeight: '700', color: aspectRatio === ar.key ? colors.primary : colors.text, marginTop: 4, fontSize: 11, textAlign: 'center' }}>
+                {ar.label}
+              </Text>
+              <Text style={{ color: colors.muted, fontSize: 9, marginTop: 2, textAlign: 'center' }}>
+                {ar.desc}
               </Text>
             </TouchableOpacity>
           ))}

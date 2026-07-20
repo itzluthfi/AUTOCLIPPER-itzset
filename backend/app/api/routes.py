@@ -212,13 +212,13 @@ async def google_callback(code: str, state: str = None, db: AsyncSession = Depen
 ACTIVE_STATUSES = ["pending", "downloading", "subtitling", "detecting",
                    "clipping", "tracking", "finalizing", "processing"]
 
-def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: str, tracking: str, num_clips: int = 5, sub_lang: str = "id"):
+def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: str, tracking: str, aspect_ratio: str = "9:16_crop", num_clips: int = 5, sub_lang: str = "id"):
     """Kirim task ke Celery/Redis; jika gagal, jalankan di thread background lokal."""
     try:
         import redis as redis_lib
         r = redis_lib.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_timeout=1)
         r.ping()
-        process_video.delay(video_id, youtube_url, user_id, mode, tracking, num_clips, sub_lang)
+        process_video.delay(video_id, youtube_url, user_id, mode, tracking, aspect_ratio, num_clips, sub_lang)
         logger.info(f"Queued video {video_id} in Celery/Redis.")
     except Exception:
         logger.info(f"Redis unavailable. Processing video {video_id} in local background thread.")
@@ -226,7 +226,7 @@ def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: st
 
         def run_local_task():
             try:
-                run_process_video(video_id, youtube_url, user_id, mode, tracking, num_clips, sub_lang)
+                run_process_video(video_id, youtube_url, user_id, mode, tracking, aspect_ratio, num_clips, sub_lang)
             except Exception as e:
                 logger.error(f"Local video processing thread failed: {e}")
 
@@ -334,7 +334,8 @@ async def submit_video(
     await db.refresh(video)
 
     sub_lang = getattr(data, "sub_lang", "id") or "id"
-    _dispatch_processing(video.id, video.youtube_url, user.id, data.mode, data.tracking, num_clips, sub_lang)
+    aspect_ratio = getattr(data, "aspect_ratio", "9:16_crop") or "9:16_crop"
+    _dispatch_processing(video.id, video.youtube_url, user.id, data.mode, data.tracking, aspect_ratio, num_clips, sub_lang)
 
     return {"status": "queued", "video_id": video.id}
 
