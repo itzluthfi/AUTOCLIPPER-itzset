@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, Animated, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, Platform, Alert, Linking, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
-import { getVideo, downloadClip, getApiKey, API_BASE } from '../services/api';
+import { getVideo, uploadClip, getApiKey, API_BASE } from '../services/api';
 
 export default function ResultsScreen({ route, navigation }: any) {
   const { videoId } = route.params;
@@ -13,6 +13,7 @@ export default function ResultsScreen({ route, navigation }: any) {
   const [error, setError] = useState('');
   const [playingClipId, setPlayingClipId] = useState<number | null>(null);
   const [apiKey, setApiKey] = useState<string | null>(null);
+  const [uploadingClipId, setUploadingClipId] = useState<number | null>(null);
 
   const loadVideo = async () => {
     try {
@@ -48,6 +49,34 @@ export default function ResultsScreen({ route, navigation }: any) {
       }
     } catch (e) {
       alert('Gagal mendownload klip.');
+    }
+  };
+
+  const handleUploadYouTube = async (clip: any) => {
+    // Jika sudah terupload, buka linknya
+    if (clip.youtube_url) {
+      Linking.openURL(clip.youtube_url);
+      return;
+    }
+    setUploadingClipId(clip.id);
+    try {
+      const res = await uploadClip(clip.id);
+      Alert.alert(
+        '✅ Upload Berhasil!',
+        `Klip Shorts berhasil diunggah ke YouTube Shorts!\n\n${res.url}`,
+        [
+          { text: 'Buka di YouTube', onPress: () => Linking.openURL(res.url) },
+          { text: 'OK', style: 'cancel' },
+        ]
+      );
+      loadVideo();
+    } catch (e: any) {
+      Alert.alert(
+        '❌ Gagal Upload',
+        e.message || 'Gagal mengunggah klip. Pastikan akun YouTube sudah terhubung melalui Login Google di Profil.'
+      );
+    } finally {
+      setUploadingClipId(null);
     }
   };
 
@@ -97,6 +126,17 @@ export default function ResultsScreen({ route, navigation }: any) {
                 "{clip.reason}"
               </Text>
             ) : null}
+
+            {clip.youtube_url ? (
+              <TouchableOpacity
+                onPress={() => Linking.openURL(clip.youtube_url)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}
+              >
+                <Ionicons name="logo-youtube" size={13} color="#FF0000" />
+                <Text style={{ color: '#FF0000', fontSize: 11, fontWeight: '600' }}>Sudah Diupload — Buka Shorts</Text>
+                <Ionicons name="open-outline" size={11} color="#FF0000" />
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
 
@@ -126,6 +166,21 @@ export default function ResultsScreen({ route, navigation }: any) {
               >
                 <Ionicons name="download-outline" size={16} color="#fff" />
                 <Text style={styles.btnText}>Download</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => handleUploadYouTube(clip)}
+                style={[styles.btnAction, { backgroundColor: clip.youtube_url ? '#28a745' : '#FF0000', opacity: uploadingClipId === clip.id ? 0.6 : 1 }]}
+                disabled={uploadingClipId === clip.id}
+              >
+                {uploadingClipId === clip.id ? (
+                  <ActivityIndicator size={14} color="#fff" />
+                ) : (
+                  <Ionicons name={clip.youtube_url ? 'checkmark-circle' : 'logo-youtube'} size={16} color="#fff" />
+                )}
+                <Text style={styles.btnText}>
+                  {uploadingClipId === clip.id ? 'Uploading...' : clip.youtube_url ? 'Sudah Upload' : 'Upload Shorts'}
+                </Text>
               </TouchableOpacity>
             </>
           ) : clip.status === 'processing' || clip.status === 'clipping' ? (

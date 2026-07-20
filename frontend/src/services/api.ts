@@ -89,6 +89,12 @@ export async function downloadClip(clipId: number): Promise<string> {
   return `${API_BASE}/clips/${clipId}/download?key=${key}`;
 }
 
+export async function uploadClip(clipId: number) {
+  return request(`/clips/${clipId}/upload`, {
+    method: 'POST',
+  });
+}
+
 export async function getCredits() {
   return request('/credits');
 }

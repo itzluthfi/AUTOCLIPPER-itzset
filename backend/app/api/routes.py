@@ -345,6 +345,7 @@ async def get_video(video_id: int, user: User = Depends(get_current_user), db: A
             "tracking": c.tracking_type,
             "status": c.status,
             "is_featured": c.is_featured,
+            "youtube_url": c.youtube_url,
         } for c in video.clips],
     }
 
