@@ -441,45 +441,99 @@ function QueueTab({ colors, isDark }: any) {
   const [queue, setQueue] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchQueue = useCallback(async () => {
-    setLoading(true);
-    try { setQueue(await apiGet('/admin/queue')); } catch (e: any) { console.error(e.message); }
-    setLoading(false);
+  const fetchQueue = useCallback(async (isInitial = false) => {
+    if (isInitial) setLoading(true);
+    try {
+      const data = await apiGet('/admin/queue');
+      setQueue(data || []);
+    } catch (e: any) {
+      console.error(e.message);
+    } finally {
+      if (isInitial) setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { fetchQueue(); const interval = setInterval(fetchQueue, 5000); return () => clearInterval(interval); }, []);
+  useEffect(() => {
+    fetchQueue(true);
+    const interval = setInterval(() => fetchQueue(false), 2000);
+    return () => clearInterval(interval);
+  }, [fetchQueue]);
 
-  if (loading) return <View style={{ padding: 16 }}><SkeletonLoader height={60} /><SkeletonLoader height={60} /></View>;
+  if (loading) return <View style={{ padding: 16 }}><SkeletonLoader height={70} /><SkeletonLoader height={70} /></View>;
 
   return (
-    <ScrollView style={{ flex: 1, padding: 16 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchQueue} />}>
+    <ScrollView style={{ flex: 1, padding: 16 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => fetchQueue(true)} />}>
       <PageContainer maxWidth={880}>
-      <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 12, fontSize: 15 }}>
-        Antrian Proses ({queue.length})
-      </Text>
-      {queue.length === 0 ? (
-        <View style={{ padding: 24, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}>
-          <Ionicons name="checkmark-circle" size={40} color={colors.success} />
-          <Text style={{ color: colors.muted, marginTop: 8 }}>Tidak ada antrian</Text>
-        </View>
-      ) : (
-        queue.map((v: any) => (
-          <View key={v.id} style={{ padding: 14, borderRadius: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ fontWeight: '600', color: colors.text, flex: 1, fontSize: 13 }} numberOfLines={1}>
-                {v.title || 'Video ' + v.youtube_id}
-              </Text>
-              <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: statusColor(v.status, colors) + '20' }}>
-                <Text style={{ color: statusColor(v.status, colors), fontSize: 11, fontWeight: '500' }}>{statusLabel(v.status)}</Text>
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text style={{ color: colors.muted, fontSize: 11 }}>User: {v.user_name}</Text>
-              <Text style={{ color: colors.muted, fontSize: 11 }}>{v.queued_for}s lalu</Text>
-            </View>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <Text style={{ fontWeight: '700', color: colors.text, fontSize: 16 }}>
+            Antrian Proses ({queue.length})
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={{ fontSize: 11, color: colors.muted }}>Realtime Sync (2s)</Text>
           </View>
-        ))
-      )}
+        </View>
+
+        {queue.length === 0 ? (
+          <View style={{ padding: 28, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}>
+            <Ionicons name="checkmark-circle" size={44} color={colors.success} />
+            <Text style={{ color: colors.text, fontWeight: '600', marginTop: 10, fontSize: 14 }}>Semua Antrian Selesai</Text>
+            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 4 }}>Tidak ada video yang sedang diproses saat ini.</Text>
+          </View>
+        ) : (
+          queue.map((v: any) => {
+            const progress = typeof v.progress === 'number' ? v.progress : 0;
+            return (
+              <View key={v.id} style={{ padding: 14, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 12 }}>
+                {/* Header Row */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '700', color: colors.text, fontSize: 14 }} numberOfLines={1}>
+                      {v.title || `Video #${v.id} (${v.youtube_id || 'File'})`}
+                    </Text>
+                    <Text style={{ color: colors.muted, fontSize: 11, marginTop: 2 }}>
+                      User: <Text style={{ fontWeight: '600', color: colors.text }}>{v.user_name}</Text> • Masuk {v.queued_for}s lalu
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.primary + '18' }}>
+                      <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '700' }}>{progress}%</Text>
+                    </View>
+                    <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: statusColor(v.status, colors) + '20' }}>
+                      <Text style={{ color: statusColor(v.status, colors), fontSize: 11, fontWeight: '600' }}>{statusLabel(v.status)}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Real-time Step Log */}
+                {v.current_step_log ? (
+                  <View style={{
+                    backgroundColor: isDark ? '#0f172a' : '#f8fafc',
+                    padding: 8,
+                    borderRadius: 6,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    marginBottom: 10,
+                  }}>
+                    <Text style={{ fontSize: 11, color: colors.text, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }} numberOfLines={2}>
+                      ⚙️ {v.current_step_log}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Progress Bar */}
+                <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' }}>
+                  <View style={{
+                    height: '100%',
+                    width: `${Math.min(100, Math.max(2, progress))}%`,
+                    backgroundColor: colors.primary,
+                    borderRadius: 3,
+                  }} />
+                </View>
+              </View>
+            );
+          })
+        )}
       </PageContainer>
     </ScrollView>
   );

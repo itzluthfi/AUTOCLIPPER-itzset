@@ -839,6 +839,8 @@ async def admin_queue(admin: User = Depends(require_admin), db: AsyncSession = D
     return [{
         "id": v.id, "title": v.title, "youtube_id": v.youtube_id, "user_id": v.user_id,
         "user_name": v.user.name if v.user else "N/A", "status": v.status, "duration": v.duration_seconds,
+        "progress": v.progress or 0,
+        "current_step_log": getattr(v, "current_step_log", None),
         "created_at": v.created_at.isoformat(),
         "queued_for": int((datetime.utcnow() - v.created_at).total_seconds()),
     } for v in queue]
