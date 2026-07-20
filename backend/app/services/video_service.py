@@ -199,8 +199,6 @@ async def detect_audio_peaks(video_path: str) -> list[dict]:
         return peaks[:5]
     except Exception as e:
         logger.error(f"Error detecting audio peaks: {e}")
-        return []
-
 def generate_tts_audio(text: str, output_path: str, lang: str = "id") -> bool:
     """Buat file audio MP3 dari teks judul hook menggunakan gTTS"""
     try:
@@ -215,6 +213,73 @@ def generate_tts_audio(text: str, output_path: str, lang: str = "id") -> bool:
         logger.error(f"TTS generation error: {e}")
         return False
 
+def analyze_clip_framing(video_path: str, start: float, end: float) -> str:
+    """
+    Analisis visual cerdas (OpenCV):
+    - Sampel frame pada rentang klip [start, end].
+    - Hitung jumlah wajah & pergerakan (motion difference).
+    - Return mode terbaik: 'speaker' (split screen 2+ orang), 'face' (1 orang face track), 'center' (sports/gaming/produk).
+    """
+    if not video_path or not os.path.exists(video_path):
+        return "face"
+
+    try:
+        import cv2
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return "face"
+
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25
+        start_frame = int(start * fps)
+        end_frame = int(end * fps)
+        sample_step = max(1, (end_frame - start_frame) // 8)
+
+        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        face_cascade = cv2.CascadeClassifier(cascade_path) if os.path.exists(cascade_path) else None
+
+        max_faces_seen = 0
+        motion_score = 0
+        prev_gray = None
+        sampled_count = 0
+
+        for f_idx in range(start_frame, end_frame, sample_step):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                continue
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            sampled_count += 1
+
+            if face_cascade:
+                faces = face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=4, minSize=(60, 60))
+                max_faces_seen = max(max_faces_seen, len(faces))
+
+            if prev_gray is not None:
+                diff = cv2.absdiff(gray, prev_gray)
+                _, thresh = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
+                motion_score += cv2.countNonZero(thresh)
+
+            prev_gray = gray
+
+        cap.release()
+
+        # Logika Keputusan Framing Cerdas (Intelligent Mix Combo)
+        if max_faces_seen >= 2:
+            logger.info(f"OpenCV Framing [{start:.1f}s-{end:.1f}s]: 2+ Wajah terdeteksi -> Mode Split Screen")
+            return "speaker"
+        elif max_faces_seen == 1:
+            logger.info(f"OpenCV Framing [{start:.1f}s-{end:.1f}s]: 1 Wajah terdeteksi -> Mode Face Track")
+            return "face"
+        elif motion_score > 500000 and sampled_count > 0:
+            logger.info(f"OpenCV Framing [{start:.1f}s-{end:.1f}s]: Pergerakan tinggi / Non-Wajah -> Mode Motion Focus")
+            return "center"
+        else:
+            return "face"
+    except Exception as e:
+        logger.error(f"Error analyzing clip framing: {e}")
+        return "face"
+
 async def clip_video(
     video_path: str,
     output_path: str,
@@ -226,12 +291,17 @@ async def clip_video(
     title: Optional[str] = None,
     sub_lang: str = "id"
 ) -> bool:
-    """Klip video + tracking (Center / Face / Speaker Split-Screen) + subtitle + Hook Title Overlay"""
+    """Klip video + tracking cerdas (Auto Mix / Face / Speaker Split) + subtitle + Hook Title Overlay"""
     duration = end - start
     if duration <= 0:
         logger.error(f"Invalid clip range: start={start} end={end}")
         return False
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    # Jika mode tracking 'auto' atau 'mix', lakukan analisis OpenCV dinamis per-klip
+    effective_tracking = tracking
+    if tracking in ["auto", "mix"]:
+        effective_tracking = analyze_clip_framing(video_path, start, end)
 
     # Buat audio TTS Voiceover jika title disediakan
     tts_audio_path = None
@@ -239,8 +309,8 @@ async def clip_video(
         tts_audio_path = os.path.join(os.path.dirname(output_path), f"tts_{os.path.basename(output_path)}.mp3")
         generate_tts_audio(title, tts_audio_path, lang=sub_lang)
 
-    # Menentukan rantai filter video berdasarkan mode tracking
-    if tracking == "speaker":
+    # Menentukan rantai filter video berdasarkan mode tracking efektif
+    if effective_tracking == "speaker":
         # Split-Screen Mode: Membagi video landscape menjadi 2 panel atas-bawah (9:16 stacked)
         vf_filter = (
             "[0:v]crop=iw/2:ih:0:0,scale=1080:960[top];"

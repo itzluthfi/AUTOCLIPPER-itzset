@@ -162,21 +162,13 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
         os.makedirs(CLIPS_DIR, exist_ok=True)
         clip_results = []
         
-        # Opsi framing dinamis bergantian (Auto Mix)
-        mix_tracking_cycle = ["face", "speaker", "face", "center", "speaker"]
-
         for i, moment in enumerate(moments):
             progress_step = min(90, 60 + int((i / max(1, len(moments))) * 30))
             
-            # Tentukan mode tracking spesifik untuk klip ini jika mode 'auto' atau 'mix'
-            current_clip_tracking = tracking
-            if tracking in ["auto", "mix"]:
-                current_clip_tracking = mix_tracking_cycle[i % len(mix_tracking_cycle)]
-
             await set_state(
                 status="clipping",
                 progress=progress_step,
-                step_log=f"[5/5] Memotong klip {i+1}/{len(moments)} (Mode {current_clip_tracking.upper()}), subtitle & Hook Intro TTS..."
+                step_log=f"[5/5] Analisis Wajah & Motion OpenCV klip {i+1}/{len(moments)}, subtitle & Hook Intro TTS..."
             )
             
             # Generasi judul viral bersih per klip
@@ -189,7 +181,7 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                 output_path=clip_path,
                 start=moment["start"],
                 end=moment["end"],
-                tracking=current_clip_tracking,
+                tracking=tracking,
                 add_subtitle=bool(sub_path),
                 subtitle_path=sub_path,
                 title=clean_clip_title,
@@ -215,10 +207,11 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                 logger.error(f"Failed to generate thumbnail: {e}")
 
             clip_results.append({
+                "clip_path": clip_path,
                 "thumbnail_path": thumb_path,
                 "start": moment["start"],
                 "end": moment["end"],
-                "title": title,
+                "title": clean_clip_title,
                 "reason": moment.get("reason", ""),
             })
 
