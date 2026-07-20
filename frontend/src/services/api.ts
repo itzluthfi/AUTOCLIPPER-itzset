@@ -62,10 +62,28 @@ export async function getHealth() {
   return request('/health');
 }
 
-export async function submitVideo(url: string, mode: string = 'heuristic', tracking: string = 'auto', numClips: number = 5, subLang: string = 'id', aspectRatio: string = '9:16_crop') {
+export async function submitVideo(
+  url: string,
+  mode: string = 'heuristic',
+  tracking: string = 'auto',
+  numClips: number = 5,
+  subLang: string = 'id',
+  videoTemplate: string = '9:16_crop',
+  subStyle: string = 'tiktok_yellow',
+  subAnim: string = 'word_pop'
+) {
   return request('/videos/submit', {
     method: 'POST',
-    body: JSON.stringify({ url, mode, tracking, aspect_ratio: aspectRatio, num_clips: numClips, sub_lang: subLang }),
+    body: JSON.stringify({
+      url,
+      mode,
+      tracking,
+      video_template: videoTemplate,
+      sub_style: subStyle,
+      sub_anim: subAnim,
+      num_clips: numClips,
+      sub_lang: subLang
+    }),
   });
 }
 

@@ -241,3 +241,48 @@ def _fallback_heuristic(transcript: str, duration: int = 0, num_clips: int = 5) 
                 })
 
     return moments[:num_clips]
+
+async def auto_detect_video_settings(title: str, description: str) -> dict:
+    """LLM Executive Director Engine: Membaca konteks video & merekomendasikan video_template, sub_style, sub_anim, tracking, & num_clips"""
+    combined = f"Title: {title}\nDescription: {description}".lower()
+
+    if any(k in combined for k in ["podcast", "interview", "bincang", "wawancara", "talkshow", "kasisolusi", "corbuzier"]):
+        return {
+            "mode": "ai",
+            "tracking": "speaker",
+            "video_template": "9:16_podcast",
+            "sub_style": "tiktok_yellow",
+            "sub_anim": "word_pop",
+            "num_clips": 5,
+            "reason": "🎬 Sutradara AI: Dideteksi Format Podcast / Wawancara 2 Orang. Mengaktifkan Split Screen 2 Panel + Subtitle Karaoke Word Highlighting."
+        }
+    elif any(k in combined for k in ["game", "gameplay", "streamer", "mobile legends", "pubg", "valorant"]):
+        return {
+            "mode": "ai",
+            "tracking": "auto",
+            "video_template": "9:16_card",
+            "sub_style": "neon_cyber",
+            "sub_anim": "word_pop",
+            "num_clips": 6,
+            "reason": "🎬 Sutradara AI: Dideteksi Konten Gaming / Live Stream. Mengaktifkan Floating Card Frame + Subtitle Neon Cyberpunk."
+        }
+    elif any(k in combined for k in ["tutorial", "belajar", "kursus", "penjelasan", "ilmu", "bisnis"]):
+        return {
+            "mode": "ai",
+            "tracking": "face",
+            "video_template": "9:16_blur",
+            "sub_style": "clean_caption",
+            "sub_anim": "full_sentence",
+            "num_clips": 4,
+            "reason": "🎬 Sutradara AI: Dideteksi Konten Edukasi / Tutorial. Mengaktifkan 9:16 Blur Background agar Presentasi/Teks Video Asli Utuh."
+        }
+    else:
+        return {
+            "mode": "ai",
+            "tracking": "auto",
+            "video_template": "9:16_crop",
+            "sub_style": "tiktok_yellow",
+            "sub_anim": "word_pop",
+            "num_clips": 5,
+            "reason": "🎬 Sutradara AI: Mengaktifkan Smart Face Crop Vertikal + TikTok Viral Yellow Subtitle Realtime Karaoke."
+        }

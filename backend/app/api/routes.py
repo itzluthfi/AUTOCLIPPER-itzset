@@ -212,13 +212,13 @@ async def google_callback(code: str, state: str = None, db: AsyncSession = Depen
 ACTIVE_STATUSES = ["pending", "downloading", "subtitling", "detecting",
                    "clipping", "tracking", "finalizing", "processing"]
 
-def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: str, tracking: str, aspect_ratio: str = "9:16_crop", num_clips: int = 5, sub_lang: str = "id"):
+def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: str, tracking: str, video_template: str = "9:16_crop", sub_style: str = "tiktok_yellow", sub_anim: str = "word_pop", num_clips: int = 5, sub_lang: str = "id"):
     """Kirim task ke Celery/Redis; jika gagal, jalankan di thread background lokal."""
     try:
         import redis as redis_lib
         r = redis_lib.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_timeout=1)
         r.ping()
-        process_video.delay(video_id, youtube_url, user_id, mode, tracking, aspect_ratio, num_clips, sub_lang)
+        process_video.delay(video_id, youtube_url, user_id, mode, tracking, video_template, sub_style, sub_anim, num_clips, sub_lang)
         logger.info(f"Queued video {video_id} in Celery/Redis.")
     except Exception:
         logger.info(f"Redis unavailable. Processing video {video_id} in local background thread.")
@@ -226,7 +226,7 @@ def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: st
 
         def run_local_task():
             try:
-                run_process_video(video_id, youtube_url, user_id, mode, tracking, aspect_ratio, num_clips, sub_lang)
+                run_process_video(video_id, youtube_url, user_id, mode, tracking, video_template, sub_style, sub_anim, num_clips, sub_lang)
             except Exception as e:
                 logger.error(f"Local video processing thread failed: {e}")
 
@@ -334,8 +334,10 @@ async def submit_video(
     await db.refresh(video)
 
     sub_lang = getattr(data, "sub_lang", "id") or "id"
-    aspect_ratio = getattr(data, "aspect_ratio", "9:16_crop") or "9:16_crop"
-    _dispatch_processing(video.id, video.youtube_url, user.id, data.mode, data.tracking, aspect_ratio, num_clips, sub_lang)
+    video_template = getattr(data, "video_template", "9:16_crop") or "9:16_crop"
+    sub_style = getattr(data, "sub_style", "tiktok_yellow") or "tiktok_yellow"
+    sub_anim = getattr(data, "sub_anim", "word_pop") or "word_pop"
+    _dispatch_processing(video.id, video.youtube_url, user.id, data.mode, data.tracking, video_template, sub_style, sub_anim, num_clips, sub_lang)
 
     return {"status": "queued", "video_id": video.id}
 
@@ -465,8 +467,8 @@ async def cleanup_expired_videos_task():
     """Latar belakang otomatis menghapus video & file fisik yang berusia > 24 jam."""
     while True:
         try:
-            from app.database import AsyncSessionLocal
-            async with AsyncSessionLocal() as db:
+            from app.database import async_session
+            async with async_session() as db:
                 cutoff = datetime.utcnow() - timedelta(hours=24)
                 result = await db.execute(select(Video).where(Video.created_at < cutoff))
                 expired_videos = result.scalars().all()

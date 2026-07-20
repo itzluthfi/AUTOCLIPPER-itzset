@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, Image, useWindowDimensions, Linking, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, Image, useWindowDimensions, Linking, Platform, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
@@ -24,7 +24,9 @@ export default function CreateClipScreen({ navigation }: any) {
   const [mode, setMode] = useState<'heuristic' | 'ai'>('heuristic');
   const [tracking, setTracking] = useState<'auto' | 'center' | 'face' | 'speaker'>('auto');
   const [subLang, setSubLang] = useState<'id' | 'en' | 'auto'>('id');
-  const [aspectRatio, setAspectRatio] = useState<'9:16_crop' | '9:16_blur' | '16:9'>('9:16_crop');
+  const [videoTemplate, setVideoTemplate] = useState<'9:16_crop' | '9:16_blur' | '16:9_landscape' | '9:16_podcast' | '9:16_card'>('9:16_crop');
+  const [subStyle, setSubStyle] = useState<'tiktok_yellow' | 'clean_caption' | 'neon_cyber' | 'minimal_movie'>('tiktok_yellow');
+  const [subAnim, setSubAnim] = useState<'word_pop' | 'full_sentence'>('word_pop');
   const [numClips, setNumClips] = useState<number>(5);
   const [autoDetecting, setAutoDetecting] = useState<boolean>(false);
   const [autoReason, setAutoReason] = useState<string | null>(null);
@@ -43,7 +45,6 @@ export default function CreateClipScreen({ navigation }: any) {
       return;
     }
 
-    // 1. Instant oEmbed metadata (Title & Channel Author)
     fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${youtubeId}&format=json`)
       .then(res => res.json())
       .then(data => {
@@ -57,7 +58,6 @@ export default function CreateClipScreen({ navigation }: any) {
       })
       .catch(() => {});
 
-    // 2. Fetch backend metadata & duration
     autoPresetVideo(url.trim())
       .then(res => {
         if (res.title || res.duration) {
@@ -71,7 +71,6 @@ export default function CreateClipScreen({ navigation }: any) {
       .catch(() => {});
   }, [youtubeId]);
 
-  // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -112,6 +111,9 @@ export default function CreateClipScreen({ navigation }: any) {
       if (result.preset) {
         if (result.preset.mode) setMode(result.preset.mode);
         if (result.preset.tracking) setTracking(result.preset.tracking);
+        if (result.preset.video_template) setVideoTemplate(result.preset.video_template);
+        if (result.preset.sub_style) setSubStyle(result.preset.sub_style);
+        if (result.preset.sub_anim) setSubAnim(result.preset.sub_anim);
         if (result.preset.num_clips) setNumClips(result.preset.num_clips);
         if (result.preset.reason) setAutoReason(result.preset.reason);
       }
@@ -134,253 +136,161 @@ export default function CreateClipScreen({ navigation }: any) {
     }
     setLoading(true);
     try {
-      const result = await submitVideo(url.trim(), mode, tracking, numClips, subLang, aspectRatio);
+      const result = await submitVideo(url.trim(), mode, tracking, numClips, subLang, videoTemplate, subStyle, subAnim);
       try {
         const activeJobsStr = await AsyncStorage.getItem('active_jobs');
         const activeJobs = activeJobsStr ? JSON.parse(activeJobsStr) : [];
-        activeJobs.push(result.video_id);
+        activeJobs.push({ id: result.video_id, title: videoMeta?.title || url.trim(), createdAt: new Date().toISOString() });
         await AsyncStorage.setItem('active_jobs', JSON.stringify(activeJobs));
       } catch {}
-      toast.success('Antrian Dibuat 🚀', 'Video berhasil ditambahkan ke antrian pemrosesan.');
-      navigation.replace('Processing', { videoId: result.video_id });
+
+      toast.success(
+        'Video Berhasil Dimasukkan Antrian!',
+        'Sistem sedang memproses video Anda secara otomatis di latar belakang.'
+      );
+
+      navigation.navigate('Main', { screen: 'Clips' });
     } catch (e: any) {
-      const isInsuf = e.message && (e.message.toLowerCase().includes('credits') || e.message.includes('402'));
-      if (isInsuf) {
-        toast.warning('Kredit AI Habis', 'Kredit tidak mencukupi. Silakan beralih ke mode "Heuristik" (Gratis).');
-      } else {
-        toast.error('Gagal Submit Video', e.message || 'Gagal memproses video');
-      }
+      toast.error('Gagal Memproses Video', e.message || 'Terjadi kesalahan sistem.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.background }}>
-      <PageContainer maxWidth={760}>
-      <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }], padding: 20 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={{ paddingVertical: 24 }}>
+      <PageContainer maxWidth={680}>
+      <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }], paddingHorizontal: 16 }}>
 
-        {/* Header */}
-        <Text style={{ fontSize: 22, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
-          Buat Clip Baru
-        </Text>
-        <Text style={{ color: colors.muted, marginBottom: 20 }}>
-          Masukkan link YouTube untuk mulai membuat short clip
-        </Text>
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontSize: 24, fontWeight: '800', color: colors.text }}>
+            Buat Clip Viral Baru
+          </Text>
+          <Text style={{ fontSize: 13, color: colors.muted, marginTop: 4 }}>
+            Masukkan URL YouTube, pilih template visual & style subtitle, lalu biarkan AI bekerja secara otomatis.
+          </Text>
+        </View>
 
-        {/* ─── COOKIE WARNING ─── */}
-        {hasCookie === false && (
-          <View style={{
-            padding: 16, borderRadius: 12, marginBottom: 16,
-            backgroundColor: colors.warning + '20',
-            borderWidth: 1, borderColor: colors.warning,
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-              <Ionicons name="warning" size={20} color={colors.warning} style={{ marginRight: 8 }} />
-              <Text style={{ fontWeight: '600', color: colors.text, flex: 1 }}>
-                Cookie YouTube Belum Diset
-              </Text>
-            </View>
-            <Text style={{ color: colors.text, fontSize: 13, lineHeight: 18, marginBottom: 12 }}>
-              Anda harus upload cookie YouTube terlebih dahulu sebelum bisa menggunakan fitur clip.
-              Cookie ini digunakan sebagai autentikasi ke YouTube.
-            </Text>
-            <Button
-              label="Setup Cookie YouTube di Profil"
-              icon="key-outline"
-              size="md"
-              onPress={() => navigation.navigate('Profile')}
-            />
-          </View>
-        )}
-
-        {hasCookie === true && (
-          <View style={{
-            padding: 12, borderRadius: 10, marginBottom: 16,
-            backgroundColor: colors.success + '15',
-            borderWidth: 1, borderColor: colors.success,
-            flexDirection: 'row', alignItems: 'center',
-          }}>
-            <Ionicons name="checkmark-circle" size={18} color={colors.success} style={{ marginRight: 8 }} />
-            <Text style={{ color: colors.success, fontWeight: '500', fontSize: 13 }}>
-              Cookie YouTube terverifikasi — siap memproses!
-            </Text>
-          </View>
-        )}
-
-        {/* URL Input */}
         <View style={{
-          padding: 16, borderRadius: 12, marginBottom: 16,
+          padding: 16, borderRadius: 16,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+          marginBottom: 16,
         }}>
           <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
-            Link YouTube
+            URL Video YouTube
           </Text>
           <TextInput
+            placeholder="https://www.youtube.com/watch?v=..."
+            placeholderTextColor={colors.muted}
             value={url}
             onChangeText={setUrl}
-            placeholder="https://youtube.com/watch?v=... atau Shorts"
-            placeholderTextColor={colors.muted}
-            autoCapitalize="none"
-            autoCorrect={false}
             style={{
+              height: 48, borderRadius: 10, paddingHorizontal: 14,
               backgroundColor: isDark ? '#0f0f0f' : '#f8fafc',
-              borderWidth: 1, borderColor: colors.border,
-              borderRadius: 8, padding: 12, fontSize: 14,
-              color: colors.text, marginBottom: 8,
+              color: colors.text,
+              borderWidth: 1, borderColor: colors.border, fontSize: 14,
             }}
           />
 
-          {/* ─── LIVE INSTANT YOUTUBE PREVIEW CARD ─── */}
           {youtubeId ? (
-            <View style={{
-              marginTop: 8, borderRadius: 10, overflow: 'hidden',
-              backgroundColor: isDark ? '#141414' : '#f1f5f9',
-              borderWidth: 1, borderColor: colors.primary + '60',
-            }}>
-              <View style={{ position: 'relative', height: 210, backgroundColor: '#000' }}>
-                {Platform.OS === 'web' && isPlayingPreview ? (
-                  <iframe
-                    src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1`}
-                    style={{ width: '100%', height: '100%', border: 'none' }}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
-                ) : (
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (Platform.OS === 'web') {
-                        setIsPlayingPreview(true);
-                      } else {
-                        Linking.openURL(`https://www.youtube.com/watch?v=${youtubeId}`);
-                      }
-                    }}
-                    activeOpacity={0.85}
-                    style={{ width: '100%', height: '100%', position: 'relative' }}
-                  >
+            <View style={{ marginTop: 14, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}>
+              {isPlayingPreview ? (
+                <View style={{ width: '100%', height: 210, backgroundColor: '#000' }}>
+                  {Platform.OS === 'web' ? (
+                    <iframe
+                      width="100%"
+                      height="100%"
+                      src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1`}
+                      title="YouTube Preview"
+                      frameBorder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  ) : (
                     <Image
                       source={{ uri: `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` }}
-                      style={{ width: '100%', height: '100%', resizeMode: 'cover', opacity: 0.88 }}
+                      style={{ width: '100%', height: '100%', resizeMode: 'cover' }}
                     />
+                  )}
+                </View>
+              ) : (
+                <TouchableOpacity onPress={() => setIsPlayingPreview(true)} style={{ position: 'relative', height: 180, width: '100%' }}>
+                  <Image
+                    source={{ uri: `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` }}
+                    style={{ width: '100%', height: '100%', resizeMode: 'cover' }}
+                  />
+                  <View style={{
+                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center',
+                  }}>
                     <View style={{
-                      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                      justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.35)',
+                      width: 52, height: 52, borderRadius: 26,
+                      backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center',
+                      shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6,
                     }}>
-                      <View style={{
-                        backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 30, padding: 4,
-                        borderWidth: 2, borderColor: '#FF0000',
-                      }}>
-                        <Ionicons name="play-circle" size={56} color="#FF0000" />
-                      </View>
-                      <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 12, marginTop: 6, textShadowColor: '#000', textShadowRadius: 4 }}>
-                        Klik untuk Putar Preview Video
-                      </Text>
+                      <Ionicons name="play" size={26} color="#fff" style={{ marginLeft: 3 }} />
                     </View>
-                    <View style={{
-                      position: 'absolute', top: 8, right: 8,
-                      backgroundColor: '#FF0000', paddingVertical: 4, paddingHorizontal: 8,
-                      borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 4,
-                    }}>
-                      <Ionicons name="logo-youtube" size={12} color="#fff" />
-                      <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>YouTube</Text>
-                    </View>
-                  </TouchableOpacity>
-                )}
-              </View>
-              {/* Rich Metadata Panel */}
-              <View style={{ padding: 12, gap: 6 }}>
-                {videoMeta?.title ? (
-                  <Text style={{ color: colors.text, fontWeight: '700', fontSize: 14, lineHeight: 20 }} numberOfLines={2}>
-                    {videoMeta.title}
-                  </Text>
-                ) : null}
-
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 2 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                    {videoMeta?.author ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Ionicons name="person-circle-outline" size={15} color={colors.primary} />
-                        <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>
-                          {videoMeta.author}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {videoMeta?.duration ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Ionicons name="time-outline" size={14} color={colors.muted} />
-                        <Text style={{ color: colors.muted, fontSize: 12, fontWeight: '500' }}>
-                          {Math.floor(videoMeta.duration / 60)}m {videoMeta.duration % 60}s
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.success + '18', paddingVertical: 3, paddingHorizontal: 8, borderRadius: 6 }}>
-                    <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-                    <Text style={{ color: colors.success, fontSize: 11, fontWeight: '600' }}>
-                      {isPlayingPreview ? 'Memutar Preview' : 'Siap Diproses'}
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700', marginTop: 8 }}>
+                      Klik untuk Putar Preview Video
                     </Text>
                   </View>
+                </TouchableOpacity>
+              )}
+
+              {videoMeta ? (
+                <View style={{ padding: 10, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border }}>
+                  <Text style={{ fontWeight: '700', color: colors.text, fontSize: 13 }} numberOfLines={1}>
+                    {videoMeta.title || 'Video YouTube'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                    {videoMeta.author ? (
+                      <Text style={{ color: colors.muted, fontSize: 11 }}>
+                        Channel: <Text style={{ color: colors.primary, fontWeight: '600' }}>{videoMeta.author}</Text>
+                      </Text>
+                    ) : null}
+                    {videoMeta.duration ? (
+                      <Text style={{ color: colors.muted, fontSize: 11 }}>
+                        Durasi: <Text style={{ color: colors.text, fontWeight: '600' }}>{Math.floor(videoMeta.duration / 60)}m {videoMeta.duration % 60}s</Text>
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
-              </View>
+              ) : null}
             </View>
           ) : null}
-          {/* ─── AUTO-DETECT LLM PRESET BUTTON ─── */}
+
           <TouchableOpacity
             onPress={handleAutoDetect}
-            disabled={autoDetecting || !url.trim()}
+            disabled={autoDetecting}
             style={{
-              marginTop: 10, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8,
-              backgroundColor: isDark ? '#1a103c' : '#f0e6ff',
-              borderWidth: 1, borderColor: colors.primary + '80',
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-              opacity: (autoDetecting || !url.trim()) ? 0.6 : 1,
+              marginTop: 12, paddingVertical: 10, paddingHorizontal: 14,
+              borderRadius: 10, backgroundColor: colors.primary + '15',
+              borderWidth: 1, borderColor: colors.primary + '40',
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}
           >
-            <Ionicons name="hardware-chip-outline" size={16} color={colors.primary} />
+            {autoDetecting ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons name="film-outline" size={18} color={colors.primary} />
+            )}
             <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 13 }}>
-              {autoDetecting ? 'Membaca Metadata Video...' : 'Deteksi Otomatis LLM (Rekomendasi Mode)'}
+              {autoDetecting ? 'Sutradara AI Membaca Video...' : '🎬 Konsultasi Sutradara AI (Auto-Preset Template)'}
             </Text>
           </TouchableOpacity>
 
           {autoReason ? (
-            <View style={{ marginTop: 8, padding: 10, borderRadius: 8, backgroundColor: colors.primary + '15', flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
-              <Ionicons name="bulb-outline" size={14} color={colors.primary} style={{ marginTop: 1 }} />
-              <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '500', flex: 1 }}>
+            <View style={{
+              marginTop: 10, padding: 10, borderRadius: 8,
+              backgroundColor: '#064e3b', borderWidth: 1, borderColor: '#10b981',
+            }}>
+              <Text style={{ color: '#ecfdf5', fontSize: 12, fontWeight: '600' }}>
                 {autoReason}
               </Text>
             </View>
           ) : null}
         </View>
 
-        {/* ─── CLIP COUNT SELECTOR (MAX 10) ─── */}
-        <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
-          Jumlah Klip Yang Diinginkan (Maksimal 10 Klip)
-        </Text>
-        <View style={{
-          flexDirection: 'row', gap: 8, marginBottom: 16,
-          padding: 14, borderRadius: 12,
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-        }}>
-          {[3, 5, 8, 10].map(c => (
-            <TouchableOpacity
-              key={c}
-              onPress={() => setNumClips(c)}
-              style={{
-                flex: 1, paddingVertical: 10, borderRadius: 8,
-                backgroundColor: numClips === c ? colors.primary : (isDark ? '#1a1a1a' : '#f1f5f9'),
-                alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <Text style={{ color: numClips === c ? '#fff' : colors.text, fontWeight: '700', fontSize: 13 }}>
-                {c} Klip
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Mode Selector */}
         <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
           Mode Deteksi Highlight
         </Text>
@@ -423,9 +333,73 @@ export default function CreateClipScreen({ navigation }: any) {
           ))}
         </View>
 
-        {/* Subtitle Language Selector */}
         <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
-          Bahasa Subtitle Video
+          🖼️ Template Layout Output Video
+        </Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {[
+              { key: '9:16_crop' as const, label: '9:16 Full Crop', icon: 'crop-outline', desc: 'Shorts / TikTok (Face Track)' },
+              { key: '9:16_blur' as const, label: '9:16 Blur Background', icon: 'phone-portrait-outline', desc: 'Landscape Utuh + Blur Top/Bottom' },
+              { key: '9:16_podcast' as const, label: '9:16 Podcast Split', icon: 'git-network-outline', desc: '2 Panel Stack Wawancara' },
+              { key: '9:16_card' as const, label: '9:16 Floating Card', icon: 'square-outline', desc: 'Frame Emas + Dark Background' },
+              { key: '16:9_landscape' as const, label: '16:9 Full Landscape', icon: 'tv-outline', desc: 'Format Horizontal Original' },
+            ].map(vt => (
+              <TouchableOpacity
+                key={vt.key}
+                onPress={() => setVideoTemplate(vt.key)}
+                style={{
+                  width: 140, padding: 10, borderRadius: 10,
+                  backgroundColor: videoTemplate === vt.key ? colors.primary + '20' : colors.card,
+                  borderWidth: 1, borderColor: videoTemplate === vt.key ? colors.primary : colors.border,
+                  alignItems: 'center',
+                }}
+              >
+                <Ionicons name={vt.icon as any} size={20} color={videoTemplate === vt.key ? colors.primary : colors.muted} />
+                <Text style={{ fontWeight: '700', color: videoTemplate === vt.key ? colors.primary : colors.text, marginTop: 6, fontSize: 12, textAlign: 'center' }}>
+                  {vt.label}
+                </Text>
+                <Text style={{ color: colors.muted, fontSize: 10, marginTop: 2, textAlign: 'center' }}>
+                  {vt.desc}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+
+        <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
+          🎨 Style Subtitle
+        </Text>
+        <View style={{
+          flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap',
+        }}>
+          {[
+            { key: 'tiktok_yellow' as const, label: '🔥 TikTok Viral Yellow', desc: 'Teks Kuning + Stroke Hitam Tebal' },
+            { key: 'clean_caption' as const, label: '💬 Clean Modern Box', desc: 'Teks Putih + Translucent Dark Box' },
+            { key: 'neon_cyber' as const, label: '⚡ Neon Cyberpunk', desc: 'Teks Cyan/Magenta Menyala Glow' },
+            { key: 'minimal_movie' as const, label: '🎬 Movie Minimalist', desc: 'Teks Sinematik Halus Bawah' },
+          ].map(ss => (
+            <TouchableOpacity
+              key={ss.key}
+              onPress={() => setSubStyle(ss.key)}
+              style={{
+                flex: 1, minWidth: 140, padding: 10, borderRadius: 10,
+                backgroundColor: subStyle === ss.key ? colors.primary + '20' : colors.card,
+                borderWidth: 1, borderColor: subStyle === ss.key ? colors.primary : colors.border,
+              }}
+            >
+              <Text style={{ fontWeight: '700', color: subStyle === ss.key ? colors.primary : colors.text, fontSize: 12 }}>
+                {ss.label}
+              </Text>
+              <Text style={{ color: colors.muted, fontSize: 10, marginTop: 2 }}>
+                {ss.desc}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
+          ⚡ Animasi & Timing Subtitle
         </Text>
         <View style={{
           flexDirection: 'row', gap: 8, marginBottom: 16,
@@ -433,7 +407,40 @@ export default function CreateClipScreen({ navigation }: any) {
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
         }}>
           {[
-            { key: 'id' as const, label: 'Bahasa Indonesia (id)', icon: 'language-outline' },
+            { key: 'word_pop' as const, label: '🎤 Karaoke Word Highlight', icon: 'mic-outline', desc: 'Highlight kata per kata secara realtime' },
+            { key: 'full_sentence' as const, label: '📝 Kalimat Utuh', icon: 'document-text-outline', desc: 'Teks muncul per frasa' },
+          ].map(sa => (
+            <TouchableOpacity
+              key={sa.key}
+              onPress={() => setSubAnim(sa.key)}
+              style={{
+                flex: 1, padding: 10, borderRadius: 8,
+                backgroundColor: subAnim === sa.key ? colors.primary + '20' : 'transparent',
+                borderWidth: 1, borderColor: subAnim === sa.key ? colors.primary : colors.border,
+                alignItems: 'center',
+              }}
+            >
+              <Ionicons name={sa.icon as any} size={18} color={subAnim === sa.key ? colors.primary : colors.muted} />
+              <Text style={{ fontWeight: '700', color: subAnim === sa.key ? colors.primary : colors.text, marginTop: 4, fontSize: 12, textAlign: 'center' }}>
+                {sa.label}
+              </Text>
+              <Text style={{ color: colors.muted, fontSize: 10, marginTop: 2, textAlign: 'center' }}>
+                {sa.desc}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
+          Bahasa Subtitle Video
+        </Text>
+        <View style={{
+          flexDirection: 'row', gap: 8, marginBottom: 20,
+          padding: 12, borderRadius: 12,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+        }}>
+          {[
+            { key: 'id' as const, label: 'Indonesia (id)', icon: 'language-outline' },
             { key: 'en' as const, label: 'English (en)', icon: 'globe-outline' },
             { key: 'auto' as const, label: 'Auto Detect', icon: 'sparkles-outline' },
           ].map(l => (
@@ -455,42 +462,6 @@ export default function CreateClipScreen({ navigation }: any) {
           ))}
         </View>
 
-        {/* Aspect Ratio & Frame Layout Selector */}
-        <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
-          Format & Orientation Output Video
-        </Text>
-        <View style={{
-          flexDirection: 'row', gap: 8, marginBottom: 20,
-          padding: 12, borderRadius: 12,
-          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-        }}>
-          {[
-            { key: '9:16_crop' as const, label: '9:16 Crop Vertikal', icon: 'crop-outline', desc: 'Shorts / TikTok (Crop & Face Track)' },
-            { key: '9:16_blur' as const, label: '9:16 Blur Background', icon: 'phone-portrait-outline', desc: 'Landscape Utuh di Frame Vertikal' },
-            { key: '16:9' as const, label: '16:9 Full Landscape', icon: 'tv-outline', desc: 'Format Horizontal Asli' },
-          ].map(ar => (
-            <TouchableOpacity
-              key={ar.key}
-              onPress={() => setAspectRatio(ar.key)}
-              style={{
-                flex: 1, padding: 8, borderRadius: 8,
-                backgroundColor: aspectRatio === ar.key ? colors.primary + '20' : 'transparent',
-                borderWidth: 1, borderColor: aspectRatio === ar.key ? colors.primary : colors.border,
-                alignItems: 'center',
-              }}
-            >
-              <Ionicons name={ar.icon as any} size={16} color={aspectRatio === ar.key ? colors.primary : colors.muted} />
-              <Text style={{ fontWeight: '700', color: aspectRatio === ar.key ? colors.primary : colors.text, marginTop: 4, fontSize: 11, textAlign: 'center' }}>
-                {ar.label}
-              </Text>
-              <Text style={{ color: colors.muted, fontSize: 9, marginTop: 2, textAlign: 'center' }}>
-                {ar.desc}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Submit Button */}
         <Button
           label={loading ? 'Memproses Video...' : 'Buat Short Clip Sekarang'}
           icon="rocket-outline"

@@ -284,6 +284,106 @@ def analyze_clip_framing(video_path: str, start: float, end: float) -> str:
         logger.error(f"Error analyzing clip framing: {e}")
         return "face"
 
+SUBTITLE_STYLE_PRESETS = {
+    "tiktok_yellow": "FontName=Arial,FontSize=24,PrimaryColour=&H0000FFFF,SecondaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=3,Outline=3,Bold=1,MarginV=50,Alignment=2",
+    "clean_caption": "FontName=Trebuchet MS,FontSize=20,PrimaryColour=&H00FFFFFF,SecondaryColour=&H0000FFFF,OutlineColour=&H00000000,BackColour=&HCC000000,BorderStyle=4,Outline=0,Bold=1,MarginV=40,Alignment=2",
+    "neon_cyber": "FontName=Impact,FontSize=26,PrimaryColour=&H00FFFF00,SecondaryColour=&H0000FFFF,OutlineColour=&H00FF00FF,BackColour=&H00000000,BorderStyle=1,Outline=2,Bold=1,MarginV=55,Alignment=2",
+    "minimal_movie": "FontName=Helvetica,FontSize=18,PrimaryColour=&H00FFFFFF,SecondaryColour=&H0000FFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=1,Outline=1,Bold=0,MarginV=25,Alignment=2",
+}
+
+def convert_srt_to_word_highlight_ass(
+    srt_path: str,
+    ass_path: str,
+    sub_style_key: str = "tiktok_yellow",
+    sub_anim: str = "word_pop"
+) -> str:
+    """Mengubah SRT/VTT menjadi file ASS dengan Real-Time Word Highlighting Karaoke (\\kf)"""
+    if not srt_path or not os.path.exists(srt_path):
+        return srt_path
+
+    style_str = SUBTITLE_STYLE_PRESETS.get(sub_style_key, SUBTITLE_STYLE_PRESETS["tiktok_yellow"])
+
+    ass_header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,24,&H0000FFFF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,3,3,0,2,20,20,50,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    try:
+        with open(srt_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+
+        import re
+        blocks = re.split(r"\n\s*\n", content.strip())
+        dialogue_lines = []
+
+        for block in blocks:
+            lines = [l.strip() for l in block.split("\n") if l.strip()]
+            time_line = None
+            text_lines = []
+            for line in lines:
+                if "-->" in line:
+                    time_line = line
+                elif not line.isdigit() and time_line:
+                    text_lines.append(line)
+
+            if not time_line or not text_lines:
+                continue
+
+            parts = time_line.split("-->")
+            start_str = parts[0].strip().replace(",", ".")
+            end_str = parts[1].strip().split()[0].replace(",", ".")
+
+            def _to_sec(ts):
+                t_parts = ts.split(":")
+                if len(t_parts) == 3:
+                    return int(t_parts[0])*3600 + int(t_parts[1])*60 + float(t_parts[2])
+                return 0.0
+
+            s_sec = _to_sec(start_str)
+            e_sec = _to_sec(end_str)
+            dur_sec = max(0.4, e_sec - s_sec)
+
+            raw_text = " ".join(text_lines)
+            words = raw_text.split()
+            if not words:
+                continue
+
+            if sub_anim == "word_pop":
+                chunk_size = 3
+                for c in range(0, len(words), chunk_size):
+                    chunk_words = words[c:c+chunk_size]
+                    chunk_dur = (len(chunk_words) / len(words)) * dur_sec
+                    c_start = s_sec + (c / len(words)) * dur_sec
+                    c_end = c_start + chunk_dur
+                    word_cs = int((chunk_dur / max(1, len(chunk_words))) * 100)
+
+                    c_start_fmt = f"{int(c_start//3600)}:{int((c_start%3600)//60):02d}:{c_start%60:05.2f}"
+                    c_end_fmt = f"{int(c_end//3600)}:{int((c_end%3600)//60):02d}:{c_end%60:05.2f}"
+
+                    kf_text = "".join([f"{{\\kf{word_cs}}}{w} " for w in chunk_words]).strip()
+                    dialogue_lines.append(f"Dialogue: 0,{c_start_fmt},{c_end_fmt},Default,,0,0,0,,{kf_text}")
+            else:
+                s_fmt = f"{int(s_sec//3600)}:{int((s_sec%3600)//60):02d}:{s_sec%60:05.2f}"
+                e_fmt = f"{int(e_sec//3600)}:{int((e_sec%3600)//60):02d}:{e_sec%60:05.2f}"
+                dialogue_lines.append(f"Dialogue: 0,{s_fmt},{e_fmt},Default,,0,0,0,,{raw_text}")
+
+        with open(ass_path, "w", encoding="utf-8") as f:
+            f.write(ass_header + "\n".join(dialogue_lines))
+
+        return ass_path if os.path.exists(ass_path) else srt_path
+    except Exception as e:
+        logger.error(f"Error converting SRT to ASS karaoke: {e}")
+        return srt_path
+
 async def clip_video(
     video_path: str,
     output_path: str,
@@ -291,7 +391,9 @@ async def clip_video(
     end: float,
     segments: Optional[list[dict]] = None,
     tracking: str = "none",
-    aspect_ratio: str = "9:16_crop",
+    video_template: str = "9:16_crop",
+    sub_style: str = "tiktok_yellow",
+    sub_anim: str = "word_pop",
     add_subtitle: bool = False,
     subtitle_path: Optional[str] = None,
     title: Optional[str] = None,
@@ -352,12 +454,12 @@ async def clip_video(
     else:
         current_label = source_v_label
 
-    # 2. Tahap Framing & Aspect Ratio
-    if aspect_ratio == "16:9":
+    # 2. Tahap Framing & Video Template
+    if video_template in ["16:9", "16:9_landscape"]:
         # Full Landscape Horizontal (Original 16:9 tanpa crop)
         video_chain.append(f"[{current_label}]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2[vframe]")
         current_label = "vframe"
-    elif aspect_ratio == "9:16_blur":
+    elif video_template == "9:16_blur":
         # Video Landscape Utuh di Tengah Frame Vertikal 9:16 + Blurred Background
         video_chain.append(
             f"[{current_label}]split[vbg][vfg];"
@@ -366,18 +468,27 @@ async def clip_video(
             f"[vblur][vmain]overlay=(W-w)/2:(H-h)/2[vframe]"
         )
         current_label = "vframe"
+    elif video_template == "9:16_card":
+        # Floating Glassmorphism Card di atas Background Gelap
+        video_chain.append(
+            f"[{current_label}]split[vbg][vfg];"
+            f"[vbg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=30:10,drawbox=color=black@0.4:t=fill[vblur];"
+            f"[vfg]scale=1000:562:force_original_aspect_ratio=decrease,pad=1000:562:(ow-iw)/2:(oh-ih)/2[vmain];"
+            f"[vblur][vmain]overlay=(W-w)/2:(H-h)/2[vframe]"
+        )
+        current_label = "vframe"
+    elif video_template == "9:16_podcast" or is_speaker_split:
+        # Podcast Split-Screen (2 Stack Top & Bottom)
+        video_chain.append(
+            f"[{current_label}]crop=iw/2:ih:0:0,scale=1080:960[vtop];"
+            f"[{current_label}]crop=iw/2:ih:iw/2:0,scale=1080:960[vbot];"
+            f"[vtop][vbot]vstack=inputs=2[vframe]"
+        )
+        current_label = "vframe"
     else:
-        # Default: 9:16 Crop Vertikal (Split-Screen Podcast vs Face Track 9:16)
-        if is_speaker_split:
-            video_chain.append(
-                f"[{current_label}]crop=iw/2:ih:0:0,scale=1080:960[vtop];"
-                f"[{current_label}]crop=iw/2:ih:iw/2:0,scale=1080:960[vbot];"
-                f"[vtop][vbot]vstack=inputs=2[vframe]"
-            )
-            current_label = "vframe"
-        else:
-            video_chain.append(f"[{current_label}]crop=ih*9/16:ih,scale=1080:1920[vframe]")
-            current_label = "vframe"
+        # Default: 9:16 Crop Vertikal (Smart Face Track 9:16)
+        video_chain.append(f"[{current_label}]crop=ih*9/16:ih,scale=1080:1920[vframe]")
+        current_label = "vframe"
 
     stage = 0
     def _chain_filter(filter_str: str):
@@ -387,12 +498,12 @@ async def clip_video(
         video_chain.append(f"[{current_label}]{filter_str}[{next_label}]")
         current_label = next_label
 
-    # 3. Subtitle Viral Preset (TikTok Bold Yellow + Stroke & Shadow)
+    # 3. Subtitle Preset (TikTok Yellow, Clean Box, Neon Cyber, Minimal) + Real-time Karaoke Highlight (\kf)
     if burn_subs:
-        escaped = subtitle_path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
-        # Preset Subtitle TikTok Viral (Bold Yellow, Stroke Hitam, Padding Bawah Pop-up)
-        sub_style = ":force_style='FontName=Arial,FontSize=22,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=3,Outline=2,Bold=1,MarginV=45,Alignment=2'"
-        sub_filter = f"subtitles='{escaped}'{sub_style}"
+        ass_sub_path = os.path.join(os.path.dirname(output_path), f"subs_{os.path.basename(output_path)}.ass")
+        final_sub_path = convert_srt_to_word_highlight_ass(subtitle_path, ass_sub_path, sub_style, sub_anim)
+        escaped_sub = final_sub_path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+        sub_filter = f"subtitles='{escaped_sub}'"
         _chain_filter(sub_filter)
 
     # 4. Title Card Text Overlay selama pause awal (detik 0 - 2.8)

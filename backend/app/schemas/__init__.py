@@ -26,7 +26,9 @@ class SubmitURL(BaseModel):
     url: str = Field(min_length=10, max_length=500)
     mode: str = Field(default="heuristic", pattern="^(heuristic|ai)$")
     tracking: str = Field(default="auto", pattern="^(center|face|speaker|auto|mix|none)$")
-    aspect_ratio: Optional[str] = Field(default="9:16_crop", pattern="^(9:16_crop|9:16_blur|16:9)$")
+    video_template: Optional[str] = Field(default="9:16_crop", pattern="^(9:16_crop|9:16_blur|16:9|16:9_landscape|9:16_podcast|9:16_card)$")
+    sub_style: Optional[str] = Field(default="tiktok_yellow", pattern="^(tiktok_yellow|clean_caption|neon_cyber|minimal_movie)$")
+    sub_anim: Optional[str] = Field(default="word_pop", pattern="^(word_pop|full_sentence)$")
     num_clips: Optional[int] = Field(default=5, ge=1, le=10)
     sub_lang: Optional[str] = Field(default="id")
 
