@@ -304,15 +304,15 @@ export default function CreateClipScreen({ navigation }: any) {
         }}>
           {[
             { key: 'heuristic' as const, label: 'Heuristic', icon: 'flash', desc: 'Cepat, gratis' },
-            { key: 'ai' as const, label: 'AI Router', icon: 'sparkles', desc: userRole === 'free' ? '🔒 Khusus Paid/Admin' : 'Akurat, 1 credit' },
+            { key: 'ai' as const, label: 'AI Router', icon: 'sparkles', desc: userRole === 'free' ? '🔒 Khusus Paid' : 'Akurat, 1 credit' },
           ].map(m => (
             <TouchableOpacity
               key={m.key}
               onPress={() => {
                 if (m.key === 'ai' && userRole === 'free') {
                   Alert.alert(
-                    '🔒 Khusus Akun Paid / Admin',
-                    'Mode AI Router hanya tersedia untuk akun Paid / Premium atau Admin. Silakan upgrade akun Anda atau gunakan Mode Heuristik (Gratis).'
+                    '🔒 Khusus Akun Paid',
+                    'Mode AI Router hanya tersedia untuk akun Paid / Premium. Silakan upgrade paket Anda atau gunakan Mode Heuristik (Gratis).'
                   );
                   return;
                 }
