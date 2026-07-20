@@ -7,7 +7,8 @@ import { PageContainer } from '../components/PageContainer';
 import { LiftCard } from '../components/LiftCard';
 import { Button } from '../components/Button';
 import { FadeInView } from '../components/FadeInView';
-import { getCredits, getUser, logout, getPublicSettings, checkCookieStatus, uploadCookie, pasteCookieText, testCookie } from '../services/api';
+import { testCookie, pasteCookieText, uploadCookie, getUser, getCredits, getPublicSettings, checkCookieStatus, logout } from '../services/api';
+import { toast } from '../components/Toast';
 
 export default function ProfileScreen({ navigation }: any) {
   const { colors, isDark, theme, setTheme } = useTheme();
@@ -33,27 +34,31 @@ export default function ProfileScreen({ navigation }: any) {
     setTestingCookie(true);
     try {
       const res = await testCookie();
-      alert(res.message);
+      if (res.valid) {
+        toast.success('Cookie Valid 🎉', res.message);
+      } else {
+        toast.error('Cookie Tidak Valid ❌', res.message);
+      }
     } catch (e: any) {
-      alert(e.message || 'Gagal menguji cookie');
+      toast.error('Gagal Menguji Cookie', e.message || 'Terjadi kesalahan');
     }
     setTestingCookie(false);
   };
 
   const handlePasteCookie = async () => {
     if (!pastedText.trim()) {
-      alert('Masukkan teks cookie Netscape atau JSON!');
+      toast.warning('Input Kosong', 'Masukkan teks cookie Netscape atau JSON!');
       return;
     }
     setSavingCookie(true);
     try {
       const res = await pasteCookieText(pastedText.trim());
-      alert(res.message || 'Cookie berhasil disimpan!');
+      toast.success('Cookie Disimpan 🎉', res.message || 'Cookie berhasil disimpan!');
       setHasCookie(true);
       setPastedText('');
       setShowCookieModal(false);
     } catch (e: any) {
-      alert(e.message || 'Gagal menyimpan cookie');
+      toast.error('Gagal Menyimpan Cookie', e.message || 'Format cookie tidak sesuai.');
     }
     setSavingCookie(false);
   };
@@ -69,11 +74,11 @@ export default function ProfileScreen({ navigation }: any) {
         setSavingCookie(true);
         try {
           await uploadCookie(file);
-          alert('File Cookie (.txt / .json) berhasil diupload!');
+          toast.success('Upload Cookie Berhasil 🎉', 'File Cookie (.txt / .json) berhasil diunggah.');
           setHasCookie(true);
           setShowCookieModal(false);
         } catch (err: any) {
-          alert(err.message || 'Gagal upload cookie');
+          toast.error('Gagal Upload Cookie', err.message || 'Gagal memproses file cookie');
         }
         setSavingCookie(false);
       };

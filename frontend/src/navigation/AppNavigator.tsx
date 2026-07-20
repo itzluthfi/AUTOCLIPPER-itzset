@@ -3,6 +3,7 @@ import { NavigationContainer, getFocusedRouteNameFromRoute } from '@react-naviga
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getVideo } from '../services/api';
+import { toast } from '../components/Toast';
 
 import HomeScreen from '../screens/HomeScreen';
 import LoginScreen from '../screens/LoginScreen';
@@ -51,11 +52,11 @@ export function AppNavigator() {
           if (!video) continue;
 
           if (video.status === 'completed') {
-            alert(`Video "${video.title || 'Video YouTube'}" selesai diproses. Silakan periksa di menu Riwayat.`);
+            toast.success('Pemrosesan Selesai 🎉', `Video "${video.title || 'Video YouTube'}" telah selesai diproses.`);
             const index = updatedJobs.indexOf(videoId);
             if (index > -1) updatedJobs.splice(index, 1);
           } else if (video.status === 'failed') {
-            alert(`Gagal memproses video: ${video.error_message || 'Terjadi kesalahan'}`);
+            toast.error('Gagal Memproses Video ❌', video.error_message || 'Terjadi kesalahan saat pemrosesan.');
             const index = updatedJobs.indexOf(videoId);
             if (index > -1) updatedJobs.splice(index, 1);
           }

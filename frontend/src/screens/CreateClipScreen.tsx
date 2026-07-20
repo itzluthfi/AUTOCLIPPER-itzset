@@ -3,7 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, I
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
-import { submitVideo, checkCookieStatus, autoPresetVideo, getUser, loadApiKey, API_BASE } from '../services/api';
+import { submitVideo, autoPresetVideo, checkCookieStatus, getUser } from '../services/api';
+import { toast } from '../components/Toast';
 import { PageContainer } from '../components/PageContainer';
 import { Button } from '../components/Button';
 import { LiftCard } from '../components/LiftCard';
@@ -85,18 +86,12 @@ export default function CreateClipScreen({ navigation }: any) {
 
   const handleSubmit = async () => {
     if (!url.trim()) {
-      Alert.alert('Error', 'Masukkan URL YouTube terlebih dahulu');
+      toast.warning('Input Kosong', 'Masukkan URL YouTube terlebih dahulu');
       return;
     }
     if (!hasCookie) {
-      Alert.alert(
-        'Cookie Belum Diset',
-        'Anda harus upload / paste cookie YouTube terlebih dahulu sebelum bisa memproses video.\n\nSilakan masuk ke menu Profil untuk mengeset cookie.',
-        [
-          { text: 'Buka Profil', onPress: () => navigation.navigate('Profile') },
-          { text: 'Batal', style: 'cancel' }
-        ]
-      );
+      toast.warning('Cookie Belum Diset', 'Silakan upload / set Cookie YouTube di menu Profil terlebih dahulu.');
+      navigation.navigate('Profile');
       return;
     }
     setLoading(true);
@@ -108,16 +103,14 @@ export default function CreateClipScreen({ navigation }: any) {
         activeJobs.push(result.video_id);
         await AsyncStorage.setItem('active_jobs', JSON.stringify(activeJobs));
       } catch {}
+      toast.success('Antrian Dibuat 🚀', 'Video berhasil ditambahkan ke antrian pemrosesan.');
       navigation.replace('Processing', { videoId: result.video_id });
     } catch (e: any) {
       const isInsuf = e.message && (e.message.toLowerCase().includes('credits') || e.message.includes('402'));
       if (isInsuf) {
-        Alert.alert(
-          'Kredit AI Habis',
-          'Kredit Anda tidak mencukupi untuk memproses video menggunakan AI.\n\nSilakan beralih ke mode "Heuristik" (Gratis) atau hubungi administrator untuk melakukan top-up kredit Anda.'
-        );
+        toast.warning('Kredit AI Habis', 'Kredit tidak mencukupi. Silakan beralih ke mode "Heuristik" (Gratis).');
       } else {
-        Alert.alert('Error', e.message || 'Gagal memproses video');
+        toast.error('Gagal Submit Video', e.message || 'Gagal memproses video');
       }
     } finally {
       setLoading(false);

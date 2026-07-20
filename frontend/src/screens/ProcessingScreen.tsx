@@ -4,6 +4,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
 import { ProgressBar } from '../components/ProgressBar';
 import { getVideo } from '../services/api';
+import { toast } from '../components/Toast';
 import { Ionicons } from '@expo/vector-icons';
 import { PageContainer } from '../components/PageContainer';
 
@@ -105,10 +106,13 @@ export default function ProcessingScreen({ route, navigation }: any) {
 
         if (video.status === 'completed') {
           clearInterval(interval);
+          toast.success('Pemrosesan Selesai 🎉', 'Video berhasil dipotong & klip siap diunduh.');
           navigation.replace('Results', { videoId, elapsedSeconds });
         } else if (video.status === 'failed') {
           clearInterval(interval);
-          setError(video.error_message || 'Gagal mengunduh / memproses video dari YouTube');
+          const errMsg = video.error_message || 'Gagal mengunduh / memproses video dari YouTube';
+          setError(errMsg);
+          toast.error('Gagal Memproses Video ❌', errMsg);
         }
       } catch (e) {
         console.error('Error fetching video status:', e);

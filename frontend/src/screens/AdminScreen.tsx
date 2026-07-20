@@ -6,6 +6,7 @@ import { SkeletonLoader } from '../components/SkeletonLoader';
 import { PageContainer } from '../components/PageContainer';
 
 import { API_BASE } from '../services/api';
+import { toast } from '../components/Toast';
 
 type Tab = 'dashboard' | 'users' | 'queue' | 'videos' | 'system';
 
@@ -314,16 +315,18 @@ function UsersTab({ colors, isDark }: any) {
       });
       setCreatedUser(result);
       setNewEmail(''); setNewName(''); setNewCredits('10');
+      toast.success('User Berhasil Dibuat 🎉', `User ${result.name || result.email} berhasil didaftarkan.`);
       fetchUsers();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast.error('Gagal Buat User', e.message); }
   };
 
   const saveCredits = async (userId: number) => {
     try {
       await apiPut(`/admin/users/${userId}/credits`, { credits: parseInt(creditValues[userId] || '0') });
+      toast.success('Kredit Diperbarui', 'Kredit user berhasil diperbarui.');
       setEditingCredits({ ...editingCredits, [userId]: false });
       fetchUsers();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast.error('Gagal Update Kredit', e.message); }
   };
 
   const startEdit = (user: any) => {
@@ -349,13 +352,13 @@ function UsersTab({ colors, isDark }: any) {
         });
         const json = await resp.json();
         if (json.status === 'ok') {
-          alert('Cookie berhasil diupload!');
+          toast.success('Upload Cookie Berhasil 🎉', 'Cookie user berhasil diperbarui!');
           fetchUsers();
         } else {
-          alert('Gagal: ' + (json.detail || 'Error'));
+          toast.error('Gagal Upload Cookie', json.detail || 'Error');
         }
       } catch (e: any) {
-        alert('Gagal upload: ' + e.message);
+        toast.error('Gagal Upload Cookie', e.message);
       }
     };
     input.click();
@@ -734,9 +737,9 @@ function SystemTab({ colors, isDark }: any) {
     setSaving(true);
     try {
       await apiPut('/admin/settings', settings);
-      alert('Pengaturan berhasil disimpan!');
+      toast.success('Pengaturan Disimpan ⚙️', 'Pengaturan sistem berhasil diperbarui.');
     } catch (e: any) {
-      alert('Gagal menyimpan pengaturan: ' + e.message);
+      toast.error('Gagal Menyimpan ❌', e.message);
     }
     setSaving(false);
   };

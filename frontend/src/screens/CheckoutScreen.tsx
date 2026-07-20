@@ -7,7 +7,8 @@ import { PageContainer } from '../components/PageContainer';
 import { LiftCard } from '../components/LiftCard';
 import { Button } from '../components/Button';
 import { FadeInView } from '../components/FadeInView';
-import { createCheckout, getPublicSettings, CreditPackage } from '../services/api';
+import { createCheckout } from '../services/api';
+import { toast } from '../components/Toast';
 
 // Fallback jika endpoint settings belum bisa dijangkau — harga final tetap divalidasi server
 const defaultPackages: CreditPackage[] = [
@@ -37,12 +38,12 @@ export default function CheckoutScreen({ navigation }: any) {
         } else {
           await Linking.openURL(res.redirect_url);
         }
-        alert('Menuju gerbang pembayaran Midtrans. Silakan selesaikan pembayaran Anda.');
+        toast.info('Menuju Pembayaran 💳', 'Membuka gerbang pembayaran Midtrans...');
       } else {
-        alert('Gagal membuat transaksi pembayaran.');
+        toast.error('Gagal Transaksi ❌', 'Gagal membuat transaksi pembayaran.');
       }
     } catch (e: any) {
-      alert(e.message || 'Terjadi kesalahan');
+      toast.error('Terjadi Kesalahan ❌', e.message || 'Gagal memproses pembayaran');
     } finally {
       setLoadingPkg(null);
     }

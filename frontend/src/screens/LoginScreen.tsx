@@ -6,7 +6,8 @@ import { Header } from '../components/Header';
 import { Aurora } from '../components/Aurora';
 import { Button } from '../components/Button';
 import { FadeInView } from '../components/FadeInView';
-import { setApiKey, getUser, API_BASE, loginWithPassword, registerWithPassword } from '../services/api';
+import { setApiKey, loginWithPassword, registerWithPassword, API_BASE } from '../services/api';
+import { toast } from '../components/Toast';
 
 type AuthMode = 'login' | 'register' | 'apikey';
 
@@ -33,36 +34,38 @@ export default function LoginScreen({ navigation }: any) {
 
   const handlePasswordLogin = async () => {
     if (!email.trim() || !password) {
-      alert('Masukkan email dan password');
+      toast.warning('Input Kurang', 'Masukkan email dan password');
       return;
     }
     setLoading(true);
     try {
       const res = await loginWithPassword(email.trim(), password);
       await setApiKey(res.api_key);
+      toast.success('Selamat Datang! 👋', `Selamat datang kembali, ${res.user?.name || 'User'}!`);
       if (res.user?.role === 'admin') {
         navigation.replace('Admin');
       } else {
         navigation.replace('MainTabs');
       }
     } catch (e: any) {
-      alert(e.message || 'Login gagal');
+      toast.error('Login Gagal ❌', e.message || 'Email atau password tidak sesuai.');
     }
     setLoading(false);
   };
 
   const handlePasswordRegister = async () => {
     if (!name.trim() || !email.trim() || !password) {
-      alert('Lengkapi nama, email, dan password');
+      toast.warning('Input Kurang', 'Lengkapi nama, email, dan password');
       return;
     }
     setLoading(true);
     try {
       const res = await registerWithPassword(name.trim(), email.trim(), password);
       await setApiKey(res.api_key);
+      toast.success('Registrasi Berhasil 🎉', 'Akun Anda berhasil dibuat!');
       navigation.replace('MainTabs');
     } catch (e: any) {
-      alert(e.message || 'Registrasi gagal');
+      toast.error('Registrasi Gagal ❌', e.message || 'Gagal mendaftarkan akun');
     }
     setLoading(false);
   };

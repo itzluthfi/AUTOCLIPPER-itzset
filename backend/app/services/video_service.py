@@ -58,7 +58,8 @@ async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[
 
     cmd = [
         *get_ytdlp_cmd(),
-        "-f", "best[height<=720]",
+        "--extractor-args", "youtube:player_client=android,web,tv",
+        "-f", "bv*[height<=720]+ba/b[height<=720]/b/best",
         "--write-subs", "--write-auto-subs",
         "--sub-langs", langs_pref,
         "-o", os.path.join(output_path, "%(id)s.%(ext)s"),
@@ -73,10 +74,11 @@ async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[
         last_stderr = stderr.decode(errors='ignore')
         if returncode != 0:
             logger.error(f"yt-dlp failed: {last_stderr}")
-            # Coba tanpa subtitle
+            # Coba fallback tanpa subtitle & format paling fleksibel
             cmd = [
                 *get_ytdlp_cmd(),
-                "-f", "best[height<=720]",
+                "--extractor-args", "youtube:player_client=android,web,tv",
+                "-f", "b/best",
                 "-o", os.path.join(output_path, "%(id)s.%(ext)s"),
             ]
             if cookie_path and os.path.exists(cookie_path):
@@ -420,6 +422,7 @@ async def get_video_info(youtube_url: str, cookie_path: Optional[str] = None) ->
     """Ambil metadata video dari YouTube (dengan opsional cookie_path)"""
     cmd = [
         *get_ytdlp_cmd(), "--dump-json",
+        "--extractor-args", "youtube:player_client=android,web,tv",
         "--no-download",
     ]
     if cookie_path and os.path.exists(cookie_path):

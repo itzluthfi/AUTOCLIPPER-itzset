@@ -9,6 +9,7 @@ import { LiftCard } from '../components/LiftCard';
 import { PageContainer } from '../components/PageContainer';
 import { Button } from '../components/Button';
 import { listVideos, deleteVideo } from '../services/api';
+import { toast } from '../components/Toast';
 
 const statusColor = (status: string, colors: any) => {
   switch (status) {
@@ -71,9 +72,10 @@ export default function HistoryScreen({ navigation }: any) {
 
     try {
       await deleteVideo(videoId);
+      toast.success('Video Dihapus 🗑️', 'Video dan file fisik di server berhasil dihapus.');
       fetchHistory();
     } catch (e: any) {
-      alert(e.message || 'Gagal menghapus video');
+      toast.error('Gagal Hapus ❌', e.message || 'Gagal menghapus video');
     }
   };
 

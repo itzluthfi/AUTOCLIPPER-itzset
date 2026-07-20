@@ -8,6 +8,7 @@ import { LiftCard } from '../components/LiftCard';
 import { PageContainer } from '../components/PageContainer';
 import { Badge } from '../components/Badge';
 import { getVideo, uploadClip, deleteVideo, getApiKey, API_BASE } from '../services/api';
+import { toast } from '../components/Toast';
 
 export default function ResultsScreen({ route, navigation }: any) {
   const { videoId } = route.params;
@@ -65,19 +66,12 @@ export default function ResultsScreen({ route, navigation }: any) {
     setUploadingClipId(clip.id);
     try {
       const res = await uploadClip(clip.id);
-      Alert.alert(
-        'Upload Berhasil',
-        `Klip Shorts berhasil diunggah ke YouTube Shorts!\n\n${res.url}`,
-        [
-          { text: 'Buka di YouTube', onPress: () => Linking.openURL(res.url) },
-          { text: 'OK', style: 'cancel' },
-        ]
-      );
+      toast.success('Upload Shorts Berhasil 🎉', `Klip Shorts telah diunggah ke YouTube!\n${res.url}`);
       loadVideo();
     } catch (e: any) {
-      Alert.alert(
-        'Gagal Upload',
-        e.message || 'Gagal mengunggah klip. Pastikan akun YouTube sudah terhubung melalui Login Google di Profil.'
+      toast.error(
+        'Upload YouTube Gagal ❌',
+        e.message || 'Gagal mengunggah klip. Pastikan akun YouTube terhubung lewat Login Google di Profil.'
       );
     } finally {
       setUploadingClipId(null);
@@ -93,10 +87,10 @@ export default function ResultsScreen({ route, navigation }: any) {
 
     try {
       await deleteVideo(videoId);
-      Alert.alert('Berhasil Hapus', 'Video dan file klip di server berhasil dihapus.');
+      toast.success('Video Dihapus 🗑️', 'Video dan file klip di server berhasil dihapus.');
       navigation.goBack();
     } catch (e: any) {
-      Alert.alert('Gagal Hapus', e.message || 'Gagal menghapus video.');
+      toast.error('Gagal Hapus ❌', e.message || 'Gagal menghapus video.');
     }
   };
 
