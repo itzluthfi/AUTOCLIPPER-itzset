@@ -289,13 +289,14 @@ async def clip_video(
     output_path: str,
     start: float,
     end: float,
+    segments: Optional[list[dict]] = None,
     tracking: str = "none",
     add_subtitle: bool = False,
     subtitle_path: Optional[str] = None,
     title: Optional[str] = None,
     sub_lang: str = "id"
 ) -> bool:
-    """Klip video + tracking cerdas (Auto Mix / Face / Speaker Split) + subtitle + Hook Title Overlay"""
+    """Klip video + Multi-Segment Connected Merge + tracking cerdas (Auto Mix / Face / Speaker Split) + subtitle + Hook Title Overlay"""
     duration = end - start
     if duration <= 0:
         logger.error(f"Invalid clip range: start={start} end={end}")
@@ -320,14 +321,35 @@ async def clip_video(
     filter_complex = True
 
     video_chain: list[str] = []
+
+    # 0. Multi-Segment Trimming & Concat (Gabungkan beberapa poin momen terhubung menjadi 1 klip padat)
+    has_multi_segments = bool(segments and len(segments) >= 2)
+    if has_multi_segments:
+        seg_v_filters = []
+        for idx, seg in enumerate(segments):
+            s_t = seg["start"]
+            e_t = seg["end"]
+            seg_v_filters.append(f"[0:v]trim=start={s_t}:end={e_t},setpts=PTS-STARTPTS[vseg{idx}]")
+            seg_v_filters.append(f"[0:a]atrim=start={s_t}:end={e_t},asetpts=PTS-STARTPTS[aseg{idx}]")
+
+        num_s = len(segments)
+        v_inputs = "".join([f"[vseg{i}]" for i in range(num_s)])
+        a_inputs = "".join([f"[aseg{i}]" for i in range(num_s)])
+        seg_v_filters.append(f"{v_inputs}{a_inputs}concat=n={num_s}:v=1:a=1[vraw][araw]")
+
+        video_chain.extend(seg_v_filters)
+        source_v_label = "vraw"
+        source_a_label = "araw"
+    else:
+        source_v_label = "0:v"
+        source_a_label = "0:a"
     
     # 1. Tahap Freeze Frame / Pause di awal video jika ada Hook Title & TTS
-    # Video di-pause (cloned 1st frame) selama 2.5 detik untuk pembacaan judul oleh TTS
     if has_voiceover:
-        video_chain.append("[0:v]tpad=start_duration=2.5:start_mode=clone[vfrozen]")
+        video_chain.append(f"[{source_v_label}]tpad=start_duration=2.5:start_mode=clone[vfrozen]")
         current_label = "vfrozen"
     else:
-        current_label = "0:v"
+        current_label = source_v_label
 
     # 2. Tahap Framing / Crop (Split-Screen 2 Orang vs Face Track 9:16)
     if is_speaker_split:
@@ -370,12 +392,14 @@ async def clip_video(
     audio_out_label = None
     if has_voiceover:
         # Tunda audio asli video selama 2.5 detik (2500ms) agar pas dengan pause frame
-        audio_chain.append("[0:a]adelay=2500|2500[a_delayed]")
+        audio_chain.append(f"[{source_a_label}]adelay=2500|2500[a_delayed]")
         audio_chain.append("[1:a]volume=1.8[avoice]")
         audio_chain.append("[a_delayed][avoice]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[aout]")
         audio_out_label = "aout"
 
-    if burn_subs:
+    if has_multi_segments:
+        seek_args = ["-i", video_path]
+    elif burn_subs:
         seek_args = ["-i", video_path, "-ss", str(start)]
     else:
         seek_args = ["-ss", str(start), "-i", video_path]
@@ -383,14 +407,15 @@ async def clip_video(
     cmd = [get_ffmpeg_cmd(), *seek_args]
     if has_voiceover:
         cmd.extend(["-i", tts_audio_path])
-    cmd.extend(["-t", str(min(duration + (2.5 if has_voiceover else 0), 65))])
+    if not has_multi_segments:
+        cmd.extend(["-t", str(min(duration + (2.5 if has_voiceover else 0), 65))])
 
     full_graph = ";".join(video_chain + audio_chain)
     cmd.extend(["-filter_complex", full_graph, "-map", f"[{video_out_label}]"])
     if audio_out_label:
         cmd.extend(["-map", f"[{audio_out_label}]"])
     else:
-        cmd.extend(["-map", "0:a?"])
+        cmd.extend(["-map", f"{source_a_label}?"])
 
     # High Quality Render Parameters (-crf 19 untuk 1080p jernih, audio 192k)
     cmd.extend([

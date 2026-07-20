@@ -55,8 +55,8 @@ async def detect_highlights(
     if audio_peaks:
         audio_context = f"\nPeak Energi Suara (Vocal Loudness Peaks): {json.dumps(audio_peaks[:5])}"
 
-    prompt = f"""Kamu adalah pakar editor video short viral (TikTok, YouTube Shorts, Reels).
-Tugasmu: Pilih tepat {num_clips} momen paling menarik & paling tinggi nilai viralnya dari transcript video berikut.
+    prompt = f"""Kamu adalah pakar editor video short viral professional (TikTok, YouTube Shorts, Reels).
+Tugasmu: Pilih tepat {num_clips} klip cerita paling menarik & paling tinggi nilai viralnya dari transcript video berikut.
 
 Judul Video: {title}
 Durasi Video: {duration} detik{heatmap_context}{audio_context}
@@ -65,14 +65,14 @@ Transcript Video:
 {transcript[:4000]}
 
 Syarat Hasil:
-1. Pilih tepat {num_clips} klip pendek (durasi masing-masing klip 30-60 detik).
-2. Klip tidak boleh saling tumpang tindih.
-3. Berikan nilai "start" (detik), "end" (detik), dan "reason" (alasan kenapa klip ini viral).
+1. Pilih tepat {num_clips} klip pendek (durasi total 30-60 detik per klip).
+2. Jika sebuah topik menarik memiliki pengantar dan kesimpulan yang terpisah, kamu BISA menggabungkan 2 sub-segmen terhubung menggunakan array "segments": [{{"start": 10, "end": 25}}, {{"start": 140, "end": 160}}].
+3. Setiap klip WAJIB memiliki judul ringkas yang menarik di field "title".
 
-Format Response WAJIB JSON array murni tanpa penjelasan teks atau markdown:
+Format Response WAJIB JSON array murni:
 [
-  {{"start": 10, "end": 55, "reason": "Hook pembuka yang mengejutkan tentang..."}},
-  {{"start": 120, "end": 170, "reason": "Klimaks percakapan emosional..."}}
+  {{"start": 10, "end": 55, "title": "Rahasia Bisnis Instan", "reason": "Hook pembuka yang mengejutkan tentang..."}},
+  {{"start": 120, "end": 180, "segments": [{{"start": 120, "end": 145}}, {{"start": 165, "end": 180}}], "title": "Klimaks Solusi Nyata", "reason": "Penggabungan pernyataan masalah & solusi tanpa bagian membosankan"}}
 ]"""
 
     try:
