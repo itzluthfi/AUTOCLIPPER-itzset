@@ -37,6 +37,15 @@ async function apiPut(path: string, data: any) {
   return resp.json();
 }
 
+async function apiDelete(path: string) {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    method: 'DELETE',
+    headers: { 'X-API-Key': (await getApiKey()) || '' },
+  });
+  if (!resp.ok) throw new Error((await resp.json()).detail || 'Error');
+  return resp.json();
+}
+
 function getApiKey(): Promise<string | null> {
   return import('../services/api').then(m => m.getApiKey());
 }
@@ -587,6 +596,22 @@ function VideosTab({ colors, isDark }: any) {
     }
   };
 
+  const handleDeleteVideo = async (videoId: number, videoTitle: string) => {
+    const confirmDelete = Platform.OS === 'web'
+      ? window.confirm(`Apakah Anda yakin ingin menghapus video "${videoTitle}" beserta file fisik di storage server?`)
+      : true;
+
+    if (!confirmDelete) return;
+
+    try {
+      await apiDelete(`/admin/videos/${videoId}`);
+      alert('Video dan file fisik di server berhasil dihapus.');
+      fetchVideos();
+    } catch (e: any) {
+      alert(e.message || 'Gagal menghapus video');
+    }
+  };
+
   if (loading) return <View style={{ padding: 16 }}><SkeletonLoader height={60} /><SkeletonLoader height={60} /></View>;
 
   return (
@@ -605,17 +630,26 @@ function VideosTab({ colors, isDark }: any) {
           const isExpanded = expandedVideoId === v.id;
           return (
             <View key={v.id} style={{ padding: 14, borderRadius: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 8 }}>
-              <TouchableOpacity onPress={() => handleExpandVideo(v.id)} activeOpacity={0.7}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <Text style={{ fontWeight: '600', color: colors.text, flex: 1, fontSize: 13 }} numberOfLines={1}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <TouchableOpacity style={{ flex: 1 }} onPress={() => handleExpandVideo(v.id)} activeOpacity={0.7}>
+                  <Text style={{ fontWeight: '600', color: colors.text, fontSize: 13 }} numberOfLines={1}>
                     {v.title || 'Video ' + v.youtube_id}
                   </Text>
-                  <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: statusColor(v.status, colors) + '20', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                </TouchableOpacity>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <TouchableOpacity onPress={() => handleExpandVideo(v.id)} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: statusColor(v.status, colors) + '20', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                     <Text style={{ color: statusColor(v.status, colors), fontSize: 11, fontWeight: '500' }}>{statusLabel(v.status)}</Text>
                     <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={12} color={statusColor(v.status, colors)} />
-                  </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity onPress={() => handleDeleteVideo(v.id, v.title || 'Video')} style={{ padding: 4 }}>
+                    <Ionicons name="trash-outline" size={16} color={colors.error} />
+                  </TouchableOpacity>
                 </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4 }}>
+              </View>
+              <TouchableOpacity onPress={() => handleExpandVideo(v.id)} activeOpacity={0.7}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4, marginTop: 2 }}>
                   <Text style={{ color: colors.muted, fontSize: 11 }}>User: {v.user_name}</Text>
                   <Text style={{ color: colors.muted, fontSize: 11 }}>
                     {v.clips_count} klip · {v.duration ? Math.floor(v.duration / 60) + 'm' : '?'}

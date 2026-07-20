@@ -84,6 +84,14 @@ export async function getVideo(videoId: number) {
   return request(`/videos/${videoId}`);
 }
 
+export async function deleteVideo(videoId: number) {
+  return request(`/videos/${videoId}`, { method: 'DELETE' });
+}
+
+export async function adminDeleteVideo(videoId: number) {
+  return request(`/admin/videos/${videoId}`, { method: 'DELETE' });
+}
+
 export async function downloadClip(clipId: number): Promise<string> {
   const key = await getApiKey();
   return `${API_BASE}/clips/${clipId}/download?key=${key}`;

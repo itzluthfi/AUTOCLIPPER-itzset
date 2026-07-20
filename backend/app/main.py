@@ -4,9 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+import asyncio
 from app.config import APP_URL, FRONTEND_URL, CORS_ORIGINS
 from app.database import init_db
-from app.api.routes import router as api_router
+from app.api.routes import router as api_router, cleanup_expired_videos_task
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,7 +16,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting up...")
     await init_db()
+    # Jalankan background task pembersihan video > 24 jam secara otomatis
+    cleanup_task = asyncio.create_task(cleanup_expired_videos_task())
     yield
+    cleanup_task.cancel()
     logger.info("Shutting down...")
 
 app = FastAPI(

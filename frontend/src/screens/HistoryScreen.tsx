@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, RefreshControl, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
@@ -8,7 +8,7 @@ import { FadeInView } from '../components/FadeInView';
 import { LiftCard } from '../components/LiftCard';
 import { PageContainer } from '../components/PageContainer';
 import { Button } from '../components/Button';
-import { listVideos } from '../services/api';
+import { listVideos, deleteVideo } from '../services/api';
 
 const statusColor = (status: string, colors: any) => {
   switch (status) {
@@ -62,6 +62,21 @@ export default function HistoryScreen({ navigation }: any) {
     setLoading(false);
   };
 
+  const handleDelete = async (videoId: number, title: string) => {
+    const confirmDelete = Platform.OS === 'web'
+      ? window.confirm(`Apakah Anda yakin ingin menghapus video "${title}" beserta file klipnya dari storage server?`)
+      : true;
+
+    if (!confirmDelete) return;
+
+    try {
+      await deleteVideo(videoId);
+      fetchHistory();
+    } catch (e: any) {
+      alert(e.message || 'Gagal menghapus video');
+    }
+  };
+
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -106,13 +121,24 @@ export default function HistoryScreen({ navigation }: any) {
                       <Text style={{ fontWeight: '600', color: colors.text, flex: 1, fontSize: 14 }} numberOfLines={1}>
                         {v.title || 'Video ' + v.youtube_id}
                       </Text>
-                      <View style={{
-                        flexDirection: 'row', alignItems: 'center', gap: 4,
-                        paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
-                        backgroundColor: statusColor(v.status, colors) + '20',
-                      }}>
-                        <Ionicons name={statusIcon(v.status)} size={11} color={statusColor(v.status, colors)} />
-                        <Text style={{ color: statusColor(v.status, colors), fontSize: 11, fontWeight: '500' }}>{statusLabel(v.status)}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{
+                          flexDirection: 'row', alignItems: 'center', gap: 4,
+                          paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
+                          backgroundColor: statusColor(v.status, colors) + '20',
+                        }}>
+                          <Ionicons name={statusIcon(v.status)} size={11} color={statusColor(v.status, colors)} />
+                          <Text style={{ color: statusColor(v.status, colors), fontSize: 11, fontWeight: '500' }}>{statusLabel(v.status)}</Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleDelete(v.id, v.title || 'Video');
+                          }}
+                          style={{ padding: 4 }}
+                        >
+                          <Ionicons name="trash-outline" size={16} color={colors.error} />
+                        </TouchableOpacity>
                       </View>
                     </View>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>

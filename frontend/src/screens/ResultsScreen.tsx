@@ -7,7 +7,7 @@ import { FadeInView } from '../components/FadeInView';
 import { LiftCard } from '../components/LiftCard';
 import { PageContainer } from '../components/PageContainer';
 import { Badge } from '../components/Badge';
-import { getVideo, uploadClip, getApiKey, API_BASE } from '../services/api';
+import { getVideo, uploadClip, deleteVideo, getApiKey, API_BASE } from '../services/api';
 
 export default function ResultsScreen({ route, navigation }: any) {
   const { videoId } = route.params;
@@ -81,6 +81,22 @@ export default function ResultsScreen({ route, navigation }: any) {
       );
     } finally {
       setUploadingClipId(null);
+    }
+  };
+
+  const handleDeleteVideo = async () => {
+    const confirmDelete = Platform.OS === 'web'
+      ? window.confirm(`Apakah Anda yakin ingin menghapus video "${video?.title || 'ini'}" dan seluruh file klipnya dari storage server?`)
+      : true;
+
+    if (!confirmDelete) return;
+
+    try {
+      await deleteVideo(videoId);
+      Alert.alert('Berhasil Hapus', 'Video dan file klip di server berhasil dihapus.');
+      navigation.goBack();
+    } catch (e: any) {
+      Alert.alert('Gagal Hapus', e.message || 'Gagal menghapus video.');
     }
   };
 
@@ -253,9 +269,22 @@ export default function ResultsScreen({ route, navigation }: any) {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
         <PageContainer maxWidth={860}>
         <FadeInView>
-          <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
-            {video?.title || 'Hasil Klip Video'}
-          </Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 4, flex: 1 }}>
+              {video?.title || 'Hasil Klip Video'}
+            </Text>
+            <TouchableOpacity
+              onPress={handleDeleteVideo}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 4,
+                backgroundColor: colors.error + '18', paddingVertical: 6, paddingHorizontal: 10,
+                borderRadius: 8, borderWidth: 1, borderColor: colors.error + '40',
+              }}
+            >
+              <Ionicons name="trash-outline" size={15} color={colors.error} />
+              <Text style={{ color: colors.error, fontSize: 12, fontWeight: '600' }}>Hapus Video</Text>
+            </TouchableOpacity>
+          </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Ionicons name="checkmark-done-circle" size={14} color={colors.success} />

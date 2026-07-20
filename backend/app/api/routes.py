@@ -1,7 +1,8 @@
 import os
 import json
 import logging
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 import httpx
@@ -384,6 +385,103 @@ async def get_video(video_id: int, user: User = Depends(get_current_user), db: A
             "youtube_url": c.youtube_url,
         } for c in video.clips],
     }
+
+async def delete_video_files_and_db(video_id: int, db: AsyncSession, user_id: Optional[int] = None) -> bool:
+    """Hapus video, klip terkait, dan file fisiknya dari storage disk."""
+    query = select(Video).where(Video.id == video_id)
+    if user_id is not None:
+        query = query.where(Video.user_id == user_id)
+    result = await db.execute(query)
+    video = result.scalar_one_or_none()
+    if not video:
+        return False
+
+    # 1. Hapus file-file klip & thumbnail
+    for clip in (video.clips or []):
+        if clip.file_path and os.path.exists(clip.file_path):
+            try:
+                os.remove(clip.file_path)
+                logger.info(f"Deleted clip file: {clip.file_path}")
+            except Exception as e:
+                logger.error(f"Error deleting clip file {clip.file_path}: {e}")
+
+        if clip.thumbnail_path and os.path.exists(clip.thumbnail_path):
+            try:
+                os.remove(clip.thumbnail_path)
+                logger.info(f"Deleted clip thumbnail: {clip.thumbnail_path}")
+            except Exception as e:
+                logger.error(f"Error deleting thumbnail {clip.thumbnail_path}: {e}")
+
+        await db.delete(clip)
+
+    # 2. Hapus file video utama jika ada
+    if video.file_path and os.path.exists(video.file_path):
+        try:
+            os.remove(video.file_path)
+            logger.info(f"Deleted main video file: {video.file_path}")
+        except Exception as e:
+            logger.error(f"Error deleting video file {video.file_path}: {e}")
+
+    # 3. Cari dan bersihkan file tambahan di DOWNLOAD_DIR, TEMP_DIR, CLIPS_DIR jika ada
+    try:
+        from app.config import DOWNLOAD_DIR, TEMP_DIR, CLIPS_DIR
+        for d in [DOWNLOAD_DIR, TEMP_DIR, CLIPS_DIR]:
+            if os.path.exists(d):
+                for fname in os.listdir(d):
+                    if f"_{video_id}_" in fname or fname.startswith(f"video_{video_id}") or fname.startswith(f"clip_{video_id}_") or fname.startswith(f"thumb_{video_id}_"):
+                        fpath = os.path.join(d, fname)
+                        if os.path.isfile(fpath):
+                            try:
+                                os.remove(fpath)
+                            except Exception:
+                                pass
+    except Exception as e:
+        logger.error(f"Error cleaning folder pattern for video {video_id}: {e}")
+
+    # 4. Hapus record video dari DB
+    await db.delete(video)
+    await db.commit()
+    return True
+
+@router.delete("/videos/{video_id}")
+async def delete_video(video_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Hapus video + file fisik dari storage disk (milik user sendiri atau admin)."""
+    user_filter = None if user.role == "admin" else user.id
+    success = await delete_video_files_and_db(video_id, db, user_id=user_filter)
+    if not success:
+        raise HTTPException(404, "Video tidak ditemukan atau Anda tidak memiliki akses")
+    return {"status": "ok", "message": "Video dan file fisik berhasil dihapus dari storage"}
+
+@router.delete("/admin/videos/{video_id}")
+async def admin_delete_video(video_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Admin endpoint hapus video + file fisik dari storage disk."""
+    success = await delete_video_files_and_db(video_id, db, user_id=None)
+    if not success:
+        raise HTTPException(404, "Video tidak ditemukan")
+    return {"status": "ok", "message": "Video dan file fisik berhasil dihapus oleh admin"}
+
+async def cleanup_expired_videos_task():
+    """Latar belakang otomatis menghapus video & file fisik yang berusia > 24 jam."""
+    while True:
+        try:
+            from app.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                cutoff = datetime.utcnow() - timedelta(hours=24)
+                result = await db.execute(select(Video).where(Video.created_at < cutoff))
+                expired_videos = result.scalars().all()
+                if expired_videos:
+                    logger.info(f"[Auto-Cleanup 24h] Menemukan {len(expired_videos)} video berusia > 24 jam. Memulai pembersihan disk storage...")
+                    for v in expired_videos:
+                        try:
+                            await delete_video_files_and_db(v.id, db)
+                            logger.info(f"[Auto-Cleanup 24h] Video #{v.id} '{v.title}' & file fisik berhasil dibersihkan dari disk.")
+                        except Exception as e:
+                            logger.error(f"[Auto-Cleanup 24h] Gagal menghapus video #{v.id}: {e}")
+        except Exception as e:
+            logger.error(f"[Auto-Cleanup Task Error]: {e}")
+
+        # Jalankan setiap 1 jam sekali (3600 detik)
+        await asyncio.sleep(3600)
 
 @router.get("/health")
 async def health():
