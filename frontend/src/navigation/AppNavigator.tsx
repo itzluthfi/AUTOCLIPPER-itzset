@@ -48,8 +48,26 @@ export function AppNavigator() {
         const updatedJobs: number[] = [...activeJobs];
 
         for (const videoId of activeJobs) {
-          const video = await getVideo(videoId).catch(() => null);
-          if (!video) continue;
+          let video: any = null;
+          try {
+            video = await getVideo(videoId);
+          } catch (fetchErr: any) {
+            // 404 / video tidak ada di DB → hapus dari active_jobs agar berhenti poll
+            const status = fetchErr?.status ?? fetchErr?.response?.status;
+            if (!status || status === 404 || status >= 400) {
+              console.warn(`[Poll] Video #${videoId} tidak ditemukan (${status}), dihapus dari active_jobs.`);
+              const index = updatedJobs.indexOf(videoId);
+              if (index > -1) updatedJobs.splice(index, 1);
+            }
+            continue;
+          }
+
+          if (!video) {
+            // Hapus juga jika response kosong / null
+            const index = updatedJobs.indexOf(videoId);
+            if (index > -1) updatedJobs.splice(index, 1);
+            continue;
+          }
 
           if (video.status === 'completed') {
             toast.success('Pemrosesan Selesai 🎉', `Video "${video.title || 'Video YouTube'}" telah selesai diproses.`);

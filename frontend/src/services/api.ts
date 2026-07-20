@@ -51,8 +51,11 @@ async function request(path: string, options: RequestInit = {}) {
       // API key tidak valid/kedaluwarsa — bersihkan sesi lokal
       await logout();
     }
-    const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
+    const errorBody = await response.json().catch(() => ({ detail: response.statusText }));
+    // Attach .status ke error object supaya polling bisa membaca kode HTTP-nya
+    const err = new Error(errorBody.detail || `HTTP ${response.status}`) as any;
+    err.status = response.status;
+    throw err;
   }
 
   return response.json();

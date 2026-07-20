@@ -88,9 +88,13 @@ export default function ProcessingScreen({ route, navigation }: any) {
       Animated.timing(slideAnim, { toValue: 0, duration: 600, easing: Easing.out(Easing.ease), useNativeDriver: true }),
     ]).start();
 
+    let consecutiveErrors = 0;
+    const MAX_ERRORS = 3; // Berhenti poll setelah 3x error 404 berturut-turut
+
     const interval = setInterval(async () => {
       try {
         const video = await getVideo(videoId);
+        consecutiveErrors = 0; // Reset counter jika berhasil
         if (video.title) setVideoTitle(video.title);
         
         setStatusKey(video.status || 'pending');
@@ -107,20 +111,36 @@ export default function ProcessingScreen({ route, navigation }: any) {
         if (video.status === 'completed') {
           clearInterval(interval);
           toast.success('Pemrosesan Selesai 🎉', 'Video berhasil dipotong & klip siap diunduh.');
-          navigation.replace('Results', { videoId, elapsedSeconds });
+          setElapsedSeconds(prev => {
+            navigation.replace('Results', { videoId, elapsedSeconds: prev });
+            return prev;
+          });
         } else if (video.status === 'failed') {
           clearInterval(interval);
           const errMsg = video.error_message || 'Gagal mengunduh / memproses video dari YouTube';
           setError(errMsg);
           toast.error('Gagal Memproses Video ❌', errMsg);
         }
-      } catch (e) {
-        console.error('Error fetching video status:', e);
+      } catch (e: any) {
+        consecutiveErrors++;
+        console.error(`Error fetching video status (${consecutiveErrors}/${MAX_ERRORS}):`, e);
+
+        // Kalau 404 atau sudah terlalu banyak error → stop poll & tampilkan error
+        const httpStatus = e?.status ?? e?.response?.status;
+        if (httpStatus === 404 || consecutiveErrors >= MAX_ERRORS) {
+          clearInterval(interval);
+          const msg = httpStatus === 404
+            ? `Video #${videoId} tidak ditemukan. Mungkin sudah dihapus atau belum dibuat.`
+            : `Gagal memuat status video setelah ${MAX_ERRORS}x percobaan.`;
+          setStatusKey('failed');
+          setError(msg);
+          setCurrentStep('Terjadi kesalahan koneksi ke server.');
+        }
       }
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [videoId, elapsedSeconds]);
+  }, [videoId]);
 
   const handleBack = () => {
     if (navigation.canGoBack()) {
