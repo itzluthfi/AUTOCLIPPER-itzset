@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, I
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
-import { submitVideo, checkCookieStatus, autoPresetVideo, loadApiKey, API_BASE } from '../services/api';
+import { submitVideo, checkCookieStatus, autoPresetVideo, getUser, loadApiKey, API_BASE } from '../services/api';
 
 function extractYouTubeId(text: string): string | null {
   if (!text) return null;
@@ -21,6 +21,7 @@ export default function CreateClipScreen({ navigation }: any) {
   const [autoDetecting, setAutoDetecting] = useState<boolean>(false);
   const [autoReason, setAutoReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [userRole, setUserRole] = useState<string>('free');
   const [hasCookie, setHasCookie] = useState<boolean | null>(null);
 
   const youtubeId = extractYouTubeId(url.trim());
@@ -35,7 +36,15 @@ export default function CreateClipScreen({ navigation }: any) {
       Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
     ]).start();
     checkCookie();
+    loadUserRole();
   }, []);
+
+  const loadUserRole = async () => {
+    try {
+      const u = await getUser();
+      if (u && u.role) setUserRole(u.role);
+    } catch {}
+  };
 
   const checkCookie = async () => {
     try {
@@ -295,23 +304,34 @@ export default function CreateClipScreen({ navigation }: any) {
         }}>
           {[
             { key: 'heuristic' as const, label: 'Heuristic', icon: 'flash', desc: 'Cepat, gratis' },
-            { key: 'ai' as const, label: 'AI Router', icon: 'sparkles', desc: 'Akurat, 1 credit' },
+            { key: 'ai' as const, label: 'AI Router', icon: 'sparkles', desc: userRole === 'free' ? '🔒 Khusus Paid/Admin' : 'Akurat, 1 credit' },
           ].map(m => (
             <TouchableOpacity
               key={m.key}
-              onPress={() => setMode(m.key)}
+              onPress={() => {
+                if (m.key === 'ai' && userRole === 'free') {
+                  Alert.alert(
+                    '🔒 Khusus Akun Paid / Admin',
+                    'Mode AI Router hanya tersedia untuk akun Paid / Premium atau Admin. Silakan upgrade akun Anda atau gunakan Mode Heuristik (Gratis).'
+                  );
+                  return;
+                }
+                setMode(m.key);
+              }}
               style={{
                 flex: 1, padding: 12, borderRadius: 8,
                 backgroundColor: mode === m.key ? colors.primary + '20' : 'transparent',
                 borderWidth: 1, borderColor: mode === m.key ? colors.primary : colors.border,
-                alignItems: 'center',
+                alignItems: 'center', opacity: (m.key === 'ai' && userRole === 'free') ? 0.7 : 1,
               }}
             >
               <Ionicons name={m.icon as any} size={20} color={mode === m.key ? colors.primary : colors.muted} />
               <Text style={{ fontWeight: '600', color: mode === m.key ? colors.primary : colors.text, marginTop: 4, fontSize: 13 }}>
                 {m.label}
               </Text>
-              <Text style={{ color: colors.muted, fontSize: 11, marginTop: 2 }}>{m.desc}</Text>
+              <Text style={{ color: (m.key === 'ai' && userRole === 'free') ? colors.warning : colors.muted, fontSize: 11, marginTop: 2, fontWeight: (m.key === 'ai' && userRole === 'free') ? '600' : '400' }}>
+                {m.desc}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>

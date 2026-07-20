@@ -83,7 +83,17 @@ export default function AdminScreen({ navigation }: any) {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
       }}>
         <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text }}>Admin Panel</Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          {/* Quick Create Clip Link */}
+          <TouchableOpacity onPress={() => navigation.navigate('MainTabs', { screen: 'Buat' })}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 4,
+              paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
+              backgroundColor: colors.primary,
+            }}>
+            <Ionicons name="add-circle-outline" size={14} color="#fff" />
+            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>🚀 Buat Clip</Text>
+          </TouchableOpacity>
           {/* Main App Link */}
           <TouchableOpacity onPress={() => navigation.navigate('MainTabs')}
             style={{

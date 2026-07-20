@@ -258,19 +258,26 @@ async def submit_video(
             f"Durasi video {duration // 60} menit melebihi batas {MAX_VIDEO_DURATION // 60} menit."
         )
 
-    # Mode AI memakai 1 kredit — potong secara atomik agar tidak bisa double-spend
+    # Role Access Control for AI Mode
     if data.mode == "ai":
-        result = await db.execute(
-            update(User)
-            .where(User.id == user.id, User.credits >= 1)
-            .values(credits=User.credits - 1)
-        )
-        if result.rowcount == 0:
-            raise HTTPException(402, "Kredit tidak cukup. Silakan isi ulang kredit Anda.")
-        db.add(CreditTransaction(
-            user_id=user.id, amount=-1, type="usage",
-            description=f"Proses AI: {info.get('title', data.url)[:100]}",
-        ))
+        if user.role == "free":
+            raise HTTPException(
+                403,
+                "Fitur AI Router hanya tersedia untuk pengguna Paket Paid / Premium. Silakan upgrade paket Anda ke Paid atau gunakan Mode Heuristik."
+            )
+        # Admin bebas mengolah video AI tanpa pemotongan kredit
+        if user.role != "admin":
+            result = await db.execute(
+                update(User)
+                .where(User.id == user.id, User.credits >= 1)
+                .values(credits=User.credits - 1)
+            )
+            if result.rowcount == 0:
+                raise HTTPException(402, "Kredit tidak cukup. Silakan isi ulang kredit Anda.")
+            db.add(CreditTransaction(
+                user_id=user.id, amount=-1, type="usage",
+                description=f"Proses AI: {info.get('title', data.url)[:100]}",
+            ))
 
     num_clips = getattr(data, "num_clips", 5) or 5
 
