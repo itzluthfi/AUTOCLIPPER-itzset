@@ -62,10 +62,17 @@ export async function getHealth() {
   return request('/health');
 }
 
-export async function submitVideo(url: string, mode: string = 'heuristic', tracking: string = 'center') {
+export async function submitVideo(url: string, mode: string = 'heuristic', tracking: string = 'center', numClips: number = 5) {
   return request('/videos/submit', {
     method: 'POST',
-    body: JSON.stringify({ url, mode, tracking }),
+    body: JSON.stringify({ url, mode, tracking, num_clips: numClips }),
+  });
+}
+
+export async function autoPresetVideo(url: string) {
+  return request('/videos/auto-preset', {
+    method: 'POST',
+    body: JSON.stringify({ url }),
   });
 }
 

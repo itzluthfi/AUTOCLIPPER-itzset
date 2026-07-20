@@ -42,9 +42,24 @@ export default function ProcessingScreen({ route, navigation }: any) {
   const [videoTitle, setVideoTitle] = useState('');
   const [error, setError] = useState('');
   const [showErrorLog, setShowErrorLog] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(30)).current;
+
+  // Stopwatch timer counter
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatElapsed = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  };
 
   useEffect(() => {
     Animated.parallel([
@@ -69,7 +84,7 @@ export default function ProcessingScreen({ route, navigation }: any) {
 
         if (video.status === 'completed') {
           clearInterval(interval);
-          navigation.replace('Results', { videoId });
+          navigation.replace('Results', { videoId, elapsedSeconds });
         } else if (video.status === 'failed') {
           clearInterval(interval);
           setError(video.error_message || 'Gagal mengunduh / memproses video dari YouTube');
@@ -80,7 +95,7 @@ export default function ProcessingScreen({ route, navigation }: any) {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [videoId]);
+  }, [videoId, elapsedSeconds]);
 
   const handleBack = () => {
     if (navigation.canGoBack()) {
@@ -111,6 +126,19 @@ export default function ProcessingScreen({ route, navigation }: any) {
             shadowRadius: 10,
             elevation: 6,
           }}>
+            {/* Live Stopwatch Badge */}
+            <View style={{
+              alignSelf: 'center', backgroundColor: isDark ? '#1a1a2e' : '#eef2ff',
+              paddingVertical: 4, paddingHorizontal: 12, borderRadius: 20,
+              flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12,
+              borderWidth: 1, borderColor: colors.primary + '50',
+            }}>
+              <Ionicons name="stopwatch-outline" size={14} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 12 }}>
+                Waktu Berjalan: {formatElapsed(elapsedSeconds)}
+              </Text>
+            </View>
+
             <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text, textAlign: 'center', marginBottom: 6 }}>
               {error ? 'Gagal Memproses Video' : 'Memproses Video Anda'}
             </Text>

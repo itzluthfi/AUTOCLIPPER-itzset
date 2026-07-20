@@ -62,17 +62,19 @@ def _clamp_moments(moments: list, duration: int) -> list:
 
 
 async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
-                               mode: str = "heuristic", tracking: str = "center"):
+                               mode: str = "heuristic", tracking: str = "center",
+                               num_clips: int = 5):
     from sqlalchemy import select
     from app.models.models import Video, Clip, User, CreditTransaction
     from app.services.video_service import (
         download_video, extract_subtitles, transcribe_audio,
-        parse_subtitle_to_text, clip_video, get_video_info,
+        parse_subtitle_to_text, clip_video, get_video_info, detect_audio_peaks,
     )
     from app.services.ai_service import detect_highlights, generate_title, _fallback_heuristic
 
     engine, session_factory = _make_session_factory()
     download_dir = os.path.join(DOWNLOAD_DIR, str(video_id))
+    num_clips = max(1, min(10, num_clips))
 
     async def set_state(status: str = None, progress: int = None, error: str = None):
         async with session_factory() as session:
@@ -90,6 +92,7 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
 
     try:
         # 1. Info video
+        await set_state(status="downloading", progress=5)
         info = await get_video_info(youtube_url)
         async with session_factory() as session:
             result = await session.execute(select(Video).where(Video.id == video_id))
@@ -100,7 +103,7 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                 video.description = info.get("description", video.description)
                 video.duration_seconds = info.get("duration", video.duration_seconds) or 0
                 video.status = "downloading"
-                video.progress = 5
+                video.progress = 10
                 await session.commit()
 
         # 2. Download (dengan cookie pengguna jika tersedia)
@@ -117,21 +120,33 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
 
         await set_state(status="subtitling", progress=25)
 
-        # 3. Subtitle / transcript
+        # 3. Subtitle / transcript & audio peak detection
         sub_path = await extract_subtitles(video_path, download_dir)
         if not sub_path:
             sub_path = await transcribe_audio(video_path, download_dir)
         transcript = await parse_subtitle_to_text(sub_path or "")
+        
+        audio_peaks = await detect_audio_peaks(video_path)
 
-        await set_state(status="detecting", progress=40)
+        await set_state(status="detecting", progress=45)
 
-        # 4. Deteksi highlight — AI hanya jika user memilih mode "ai" DAN key tersedia
+        # 4. Deteksi highlight — Multi-modal (Text + Traffic Heatmap + Audio Peaks)
         use_ai = (mode == "ai") and bool(NOVITA_API_KEY)
         duration = info.get("duration", 0) or 0
+        heatmap_data = info.get("heatmap", [])
+
         if use_ai and transcript:
-            moments = await detect_highlights(transcript, info.get("title", ""), duration)
+            moments = await detect_highlights(
+                transcript=transcript,
+                title=info.get("title", ""),
+                duration=duration,
+                num_clips=num_clips,
+                heatmap_data=heatmap_data,
+                audio_peaks=audio_peaks
+            )
         else:
-            moments = _fallback_heuristic(transcript, duration)
+            moments = _fallback_heuristic(transcript, duration, num_clips)
+            
         moments = _clamp_moments(moments, duration)
         if not moments:
             moments = _clamp_moments(
@@ -139,10 +154,13 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
             ) or [{"start": 0, "end": min(45, duration or 45), "reason": "Pembukaan video"}]
 
         # 5. Clipping
-        await set_state(status="clipping", progress=55)
+        await set_state(status="clipping", progress=60)
         os.makedirs(CLIPS_DIR, exist_ok=True)
         clip_results = []
         for i, moment in enumerate(moments):
+            progress_step = min(90, 60 + int((i / max(1, len(moments))) * 30))
+            await set_state(status="clipping", progress=progress_step)
+            
             clip_path = os.path.join(CLIPS_DIR, f"clip_{video_id}_{i}.mp4")
             success = await clip_video(
                 video_path=video_path,
@@ -172,68 +190,67 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                 thumb_path = None
 
             title = await generate_title(
-                (moment["reason"] or transcript[:200]), info.get("title", "")
+                (moment.get("reason") or transcript[:200]), info.get("title", "")
             )
             clip_results.append({
                 "path": clip_path,
                 "thumbnail_path": thumb_path,
                 "start": moment["start"],
                 "end": moment["end"],
-                "reason": moment["reason"],
                 "title": title,
+                "reason": moment.get("reason", ""),
             })
-            await set_state(progress=55 + int((i + 1) / len(moments) * 35))
 
         if not clip_results:
             raise Exception("Tidak ada klip yang berhasil dibuat")
 
-        # 6. Simpan ke DB + selesai
+        # 6. Simpan DB
         await set_state(status="finalizing", progress=95)
         async with session_factory() as session:
+            for c in clip_results:
+                clip = Clip(
+                    video_id=video_id,
+                    title=c["title"],
+                    file_path=c["path"],
+                    thumbnail_path=c["thumbnail_path"],
+                    start_time=c["start"],
+                    end_time=c["end"],
+                    reason=c["reason"],
+                    method=mode,
+                    tracking_type=tracking,
+                    status="ready",
+                )
+                session.add(clip)
+
             result = await session.execute(select(Video).where(Video.id == video_id))
             video = result.scalar_one_or_none()
             if video:
                 video.status = "completed"
                 video.progress = 100
-                video.file_path = None  # sumber dihapus setelah selesai
-                for cr in clip_results:
-                    session.add(Clip(
-                        video_id=video_id,
-                        start_time=cr["start"],
-                        end_time=cr["end"],
-                        reason=cr["reason"],
-                        method="ai" if use_ai else "heuristic",
-                        tracking_type=tracking,
-                        file_path=cr["path"],
-                        thumbnail_path=cr["thumbnail_path"],
-                        status="ready",
-                        title=cr["title"],
-                    ))
-                await session.commit()
-
-        return {"video_id": video_id, "clips_created": len(clip_results)}
+            await session.commit()
 
     except Exception as e:
-        logger.exception(f"Process video {video_id} failed")
-        await set_state(status="failed", progress=0, error=str(e))
-        # Refund kredit jika mode AI (kredit dipotong saat submit)
+        logger.exception(f"Process video {video_id} failed: {e}")
+        await set_state(status="failed", error=str(e))
+        # Refund kredit jika gagal
         if mode == "ai":
             try:
                 async with session_factory() as session:
-                    result = await session.execute(select(User).where(User.id == user_id))
-                    user = result.scalar_one_or_none()
-                    if user:
-                        user.credits += 1
+                    res = await session.execute(select(User).where(User.id == user_id))
+                    usr = res.scalar_one_or_none()
+                    if usr:
+                        usr.credits += 1
                         session.add(CreditTransaction(
-                            user_id=user_id, amount=1, type="refund",
-                            description=f"Refund: proses video #{video_id} gagal",
+                            user_id=user_id,
+                            amount=1,
+                            transaction_type="refund",
+                            description=f"Refund kredit karena gagal memproses video {video_id}",
                         ))
                         await session.commit()
             except Exception:
                 logger.exception("Gagal refund kredit")
         raise
     finally:
-        # Cleanup file download (video sumber + subtitle + audio temp)
         try:
             if os.path.isdir(download_dir):
                 shutil.rmtree(download_dir, ignore_errors=True)
@@ -243,13 +260,15 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
 
 
 def run_process_video(video_id: int, youtube_url: str, user_id: int,
-                      mode: str = "heuristic", tracking: str = "center"):
+                      mode: str = "heuristic", tracking: str = "center",
+                      num_clips: int = 5):
     """Entry point sinkron — dipakai Celery task maupun thread fallback lokal."""
-    return asyncio.run(_process_video_async(video_id, youtube_url, user_id, mode, tracking))
+    return asyncio.run(_process_video_async(video_id, youtube_url, user_id, mode, tracking, num_clips))
 
 
 @celery_app.task(name="process_video")
 def process_video(video_id: int, youtube_url: str, user_id: int,
-                  mode: str = "heuristic", tracking: str = "center"):
+                  mode: str = "heuristic", tracking: str = "center",
+                  num_clips: int = 5):
     """Proses video: download → subtitle → deteksi highlight → clip → simpan → cleanup."""
-    return run_process_video(video_id, youtube_url, user_id, mode, tracking)
+    return run_process_video(video_id, youtube_url, user_id, mode, tracking, num_clips)

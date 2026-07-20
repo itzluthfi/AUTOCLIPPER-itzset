@@ -184,9 +184,21 @@ export default function ResultsScreen({ route, navigation }: any) {
         <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
           {video?.title || 'Hasil Klip Video'}
         </Text>
-        <Text style={{ color: colors.muted, marginBottom: 16, fontSize: 13 }}>
-          🎉 {video?.clips?.length || 0} klip berhasil dihasilkan
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <Text style={{ color: colors.muted, fontSize: 13 }}>
+            🎉 {video?.clips?.length || 0} klip berhasil dihasilkan
+          </Text>
+          {route.params?.elapsedSeconds ? (
+            <View style={{
+              backgroundColor: colors.success + '20', paddingVertical: 2, paddingHorizontal: 8,
+              borderRadius: 6, borderWidth: 1, borderColor: colors.success + '50',
+            }}>
+              <Text style={{ color: colors.success, fontSize: 11, fontWeight: '600' }}>
+                ⏱️ Diproses dalam {Math.floor(route.params.elapsedSeconds / 60)}m {route.params.elapsedSeconds % 60}s
+              </Text>
+            </View>
+          ) : null}
+        </View>
 
         {video?.clips?.map((clip: any, index: number) => renderClip(clip, index))}
       </ScrollView>

@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, I
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
-import { submitVideo, checkCookieStatus, loadApiKey, API_BASE } from '../services/api';
+import { submitVideo, checkCookieStatus, autoPresetVideo, loadApiKey, API_BASE } from '../services/api';
 
 function extractYouTubeId(text: string): string | null {
   if (!text) return null;
@@ -17,6 +17,9 @@ export default function CreateClipScreen({ navigation }: any) {
   const [url, setUrl] = useState('');
   const [mode, setMode] = useState<'heuristic' | 'ai'>('heuristic');
   const [tracking, setTracking] = useState<'center' | 'face' | 'speaker'>('center');
+  const [numClips, setNumClips] = useState<number>(5);
+  const [autoDetecting, setAutoDetecting] = useState<boolean>(false);
+  const [autoReason, setAutoReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasCookie, setHasCookie] = useState<boolean | null>(null);
 
@@ -43,6 +46,28 @@ export default function CreateClipScreen({ navigation }: any) {
     }
   };
 
+  const handleAutoDetect = async () => {
+    if (!url.trim()) {
+      Alert.alert('Error', 'Masukkan URL YouTube terlebih dahulu untuk deteksi otomatis');
+      return;
+    }
+    setAutoDetecting(true);
+    setAutoReason(null);
+    try {
+      const res = await autoPresetVideo(url.trim());
+      if (res.preset) {
+        if (res.preset.mode) setMode(res.preset.mode);
+        if (res.preset.tracking) setTracking(res.preset.tracking);
+        if (res.preset.num_clips) setNumClips(res.preset.num_clips);
+        setAutoReason(res.preset.reason || 'Saran otomatis dari AI berhasil diterapkan!');
+      }
+    } catch (e: any) {
+      Alert.alert('Info', 'Gagal membaca metadata otomatis. Menampilkan preset standar.');
+    } finally {
+      setAutoDetecting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!url.trim()) {
       Alert.alert('Error', 'Masukkan URL YouTube terlebih dahulu');
@@ -61,7 +86,7 @@ export default function CreateClipScreen({ navigation }: any) {
     }
     setLoading(true);
     try {
-      const result = await submitVideo(url.trim(), mode, tracking);
+      const result = await submitVideo(url.trim(), mode, tracking, numClips);
       try {
         const activeJobsStr = await AsyncStorage.getItem('active_jobs');
         const activeJobs = activeJobsStr ? JSON.parse(activeJobsStr) : [];
@@ -206,11 +231,62 @@ export default function CreateClipScreen({ navigation }: any) {
               </View>
             </View>
           ) : null}
+          {/* ─── AUTO-DETECT LLM PRESET BUTTON ─── */}
+          <TouchableOpacity
+            onPress={handleAutoDetect}
+            disabled={autoDetecting || !url.trim()}
+            style={{
+              marginTop: 10, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8,
+              backgroundColor: isDark ? '#1a103c' : '#f0e6ff',
+              borderWidth: 1, borderColor: colors.primary + '80',
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+              opacity: (autoDetecting || !url.trim()) ? 0.6 : 1,
+            }}
+          >
+            <Ionicons name="hardware-chip-outline" size={16} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 13 }}>
+              {autoDetecting ? '🤖 Membaca Metadata Video...' : '🤖 Deteksi Otomatis LLM (Rekomendasi Mode)'}
+            </Text>
+          </TouchableOpacity>
+
+          {autoReason ? (
+            <View style={{ marginTop: 8, padding: 10, borderRadius: 8, backgroundColor: colors.primary + '15' }}>
+              <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '500' }}>
+                💡 {autoReason}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* ─── CLIP COUNT SELECTOR (MAX 10) ─── */}
+        <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
+          Jumlah Klip Yang Diinginkan (Maksimal 10 Klip)
+        </Text>
+        <View style={{
+          flexDirection: 'row', gap: 8, marginBottom: 16,
+          padding: 14, borderRadius: 12,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+        }}>
+          {[3, 5, 8, 10].map(c => (
+            <TouchableOpacity
+              key={c}
+              onPress={() => setNumClips(c)}
+              style={{
+                flex: 1, paddingVertical: 10, borderRadius: 8,
+                backgroundColor: numClips === c ? colors.primary : (isDark ? '#1a1a1a' : '#f1f5f9'),
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text style={{ color: numClips === c ? '#fff' : colors.text, fontWeight: '700', fontSize: 13 }}>
+                {c} Klip
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         {/* Mode Selector */}
         <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
-          Mode Deteksi
+          Mode Deteksi Highlight
         </Text>
         <View style={{
           flexDirection: 'row', gap: 8, marginBottom: 16,
@@ -219,7 +295,7 @@ export default function CreateClipScreen({ navigation }: any) {
         }}>
           {[
             { key: 'heuristic' as const, label: 'Heuristic', icon: 'flash', desc: 'Cepat, gratis' },
-            { key: 'ai' as const, label: 'AI', icon: 'sparkles', desc: 'Akurat, 1 credit' },
+            { key: 'ai' as const, label: 'AI Router', icon: 'sparkles', desc: 'Akurat, 1 credit' },
           ].map(m => (
             <TouchableOpacity
               key={m.key}
@@ -242,7 +318,7 @@ export default function CreateClipScreen({ navigation }: any) {
 
         {/* Tracking Selector */}
         <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
-          Tracking Wajah
+          Framing & Tracking Wajah
         </Text>
         <View style={{
           flexDirection: 'row', gap: 8, marginBottom: 20,
@@ -251,8 +327,8 @@ export default function CreateClipScreen({ navigation }: any) {
         }}>
           {[
             { key: 'center' as const, label: 'Center', icon: 'square-outline', desc: 'Tengah' },
-            { key: 'face' as const, label: 'Face', icon: 'person-outline', desc: 'Lacak Wajah' },
-            { key: 'speaker' as const, label: 'Speaker', icon: 'mic-outline', desc: 'Pembicara' },
+            { key: 'face' as const, label: 'Face Track', icon: 'person-outline', desc: 'Lacak Wajah' },
+            { key: 'speaker' as const, label: 'Split Screen', icon: 'grid-outline', desc: 'Podcast 2 Orang' },
           ].map(t => (
             <TouchableOpacity
               key={t.key}

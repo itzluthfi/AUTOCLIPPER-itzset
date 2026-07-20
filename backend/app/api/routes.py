@@ -175,13 +175,13 @@ async def google_callback(code: str, state: str = None, db: AsyncSession = Depen
 ACTIVE_STATUSES = ["pending", "downloading", "subtitling", "detecting",
                    "clipping", "tracking", "finalizing", "processing"]
 
-def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: str, tracking: str):
-    """Antrekan ke Celery jika Redis tersedia; jika tidak, jalankan di thread lokal."""
+def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: str, tracking: str, num_clips: int = 5):
+    """Kirim task ke Celery/Redis; jika gagal, jalankan di thread background lokal."""
     try:
         import redis as redis_lib
         r = redis_lib.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_timeout=1)
         r.ping()
-        process_video.delay(video_id, youtube_url, user_id, mode, tracking)
+        process_video.delay(video_id, youtube_url, user_id, mode, tracking, num_clips)
         logger.info(f"Queued video {video_id} in Celery/Redis.")
     except Exception:
         logger.info(f"Redis unavailable. Processing video {video_id} in local background thread.")
@@ -189,11 +189,43 @@ def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: st
 
         def run_local_task():
             try:
-                run_process_video(video_id, youtube_url, user_id, mode, tracking)
+                run_process_video(video_id, youtube_url, user_id, mode, tracking, num_clips)
             except Exception as e:
                 logger.error(f"Local video processing thread failed: {e}")
 
         threading.Thread(target=run_local_task, daemon=True).start()
+
+@router.post("/videos/auto-preset")
+async def auto_preset_video(
+    data: SubmitURL,
+    user: User = Depends(get_current_user),
+):
+    """Menggunakan LLM untuk membaca metadata video dan merekomendasikan mode tracking & jumlah klip"""
+    from app.services.video_service import get_video_info
+    from app.services.ai_service import auto_detect_video_settings
+
+    try:
+        info = await get_video_info(data.url, cookie_path=user.cookie_path)
+        title = info.get("title", "")
+        desc = info.get("description", "")
+        preset = await auto_detect_video_settings(title, desc)
+        return {
+            "title": title,
+            "thumbnail": info.get("thumbnail", ""),
+            "duration": info.get("duration", 0),
+            "preset": preset
+        }
+    except Exception as e:
+        logger.error(f"Auto preset error: {e}")
+        return {
+            "title": "",
+            "preset": {
+                "mode": "ai",
+                "tracking": "face",
+                "num_clips": 5,
+                "reason": "Default preset"
+            }
+        }
 
 @router.post("/videos/submit")
 async def submit_video(
@@ -240,6 +272,8 @@ async def submit_video(
             description=f"Proses AI: {info.get('title', data.url)[:100]}",
         ))
 
+    num_clips = getattr(data, "num_clips", 5) or 5
+
     video = Video(
         user_id=user.id,
         youtube_url=data.url,
@@ -255,7 +289,7 @@ async def submit_video(
     await db.commit()
     await db.refresh(video)
 
-    _dispatch_processing(video.id, video.youtube_url, user.id, data.mode, data.tracking)
+    _dispatch_processing(video.id, video.youtube_url, user.id, data.mode, data.tracking, num_clips)
 
     return {"status": "queued", "video_id": video.id}
 

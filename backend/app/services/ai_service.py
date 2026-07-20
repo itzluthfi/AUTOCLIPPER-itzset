@@ -1,5 +1,7 @@
 import json
 import logging
+import re
+from typing import Optional, List, Dict
 from openai import AsyncOpenAI
 from app.config import NOVITA_API_KEY, NOVITA_BASE_URL, NOVITA_MODEL
 
@@ -10,27 +12,67 @@ if NOVITA_API_KEY:
     client = AsyncOpenAI(
         api_key=NOVITA_API_KEY,
         base_url=NOVITA_BASE_URL,
+        default_headers={
+            "api-key": NOVITA_API_KEY,
+            "X-API-Key": NOVITA_API_KEY,
+            "Authorization": f"Bearer {NOVITA_API_KEY}"
+        }
     )
 
-async def detect_highlights(transcript: str, title: str = "", duration: int = 0) -> list[dict]:
+def _extract_response_text(resp) -> str:
+    """Ekstrak teks balasan LLM dari content atau reasoning/reasoning_content"""
+    try:
+        msg = resp.choices[0].message
+        if msg.content:
+            return msg.content.strip()
+        reasoning = getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None)
+        if reasoning:
+            return str(reasoning).strip()
+        return str(msg).strip()
+    except Exception as e:
+        logger.error(f"Error extracting response text: {e}")
+        return ""
+
+async def detect_highlights(
+    transcript: str,
+    title: str = "",
+    duration: int = 0,
+    num_clips: int = 5,
+    heatmap_data: Optional[list] = None,
+    audio_peaks: Optional[list] = None
+) -> list[dict]:
+    """Deteksi momen viral (hingga num_clips, max 10) menggunakan LLM / Multi-modal heuristic"""
+    num_clips = max(1, min(10, num_clips))
+
     if not client:
-        return _fallback_heuristic(transcript, duration)
+        return _fallback_heuristic(transcript, duration, num_clips)
 
-    prompt = f"""Kamu adalah asisten yang membantu memilih momen penting dari transcript video YouTube untuk dibuat video short (30-60 detik).
+    heatmap_context = ""
+    if heatmap_data:
+        heatmap_context = f"\nData Trafik Penonton (Most Replayed Peaks): {json.dumps(heatmap_data[:5])}"
 
-Judul video: {title}
-Durasi video: {duration} detik
+    audio_context = ""
+    if audio_peaks:
+        audio_context = f"\nPeak Energi Suara (Vocal Loudness Peaks): {json.dumps(audio_peaks[:5])}"
 
-Transcript:
-{transcript}
+    prompt = f"""Kamu adalah pakar editor video short viral (TikTok, YouTube Shorts, Reels).
+Tugasmu: Pilih tepat {num_clips} momen paling menarik & paling tinggi nilai viralnya dari transcript video berikut.
 
-Pilih 3-5 momen paling menarik untuk dijadikan YouTube Shorts.
-Setiap momen harus 30-60 detik.
-Berikan timestamp mulai, timestamp selesai, dan alasan kenapa momen itu menarik.
+Judul Video: {title}
+Durasi Video: {duration} detik{heatmap_context}{audio_context}
 
-Format JSON array saja, tanpa markdown:
+Transcript Video:
+{transcript[:4000]}
+
+Syarat Hasil:
+1. Pilih tepat {num_clips} klip pendek (durasi masing-masing klip 30-60 detik).
+2. Klip tidak boleh saling tumpang tindih.
+3. Berikan nilai "start" (detik), "end" (detik), dan "reason" (alasan kenapa klip ini viral).
+
+Format Response WAJIB JSON array murni tanpa penjelasan teks atau markdown:
 [
-  {{"start": <detik>, "end": <detik>, "reason": "alasan"}}
+  {{"start": 10, "end": 55, "reason": "Hook pembuka yang mengejutkan tentang..."}},
+  {{"start": 120, "end": 170, "reason": "Klimaks percakapan emosional..."}}
 ]"""
 
     try:
@@ -40,40 +82,94 @@ Format JSON array saja, tanpa markdown:
             temperature=0.3,
             max_tokens=2000,
         )
-        text = resp.choices[0].message.content.strip()
-        # Bersihin markdown code block
+        text = _extract_response_text(resp)
         text = text.replace("```json", "").replace("```", "").strip()
+        
+        # Ekstrak json array jika ada teks di sekitarnya
+        match = re.search(r"\[.*\]", text, re.DOTALL)
+        if match:
+            text = match.group(0)
+
         moments = json.loads(text)
         if isinstance(moments, list) and len(moments) > 0:
-            return moments
-        return _fallback_heuristic(transcript, duration)
+            return moments[:num_clips]
+        return _fallback_heuristic(transcript, duration, num_clips)
     except Exception as e:
         logger.error(f"AI highlight detection failed: {e}")
-        return _fallback_heuristic(transcript, duration)
+        return _fallback_heuristic(transcript, duration, num_clips)
 
-async def generate_title(transcript: str, video_title: str) -> str:
+async def auto_detect_video_settings(title: str, description: str = "") -> dict:
+    """Membaca metadata video untuk menyarankan mode tracking & preset otomatis via LLM"""
+    default_preset = {
+        "mode": "ai",
+        "tracking": "face",
+        "num_clips": 5,
+        "reason": "Deteksi otomatis berdasarkan judul & kategori video."
+    }
     if not client:
-        return f"Klip dari: {video_title[:100]}"
+        return default_preset
 
-    prompt = f"""Buat judul menarik untuk YouTube Short dari video ini.
-Video asli: {video_title}
-Isi klip: {transcript[:500]}
+    prompt = f"""Analisis metadata video YouTube berikut:
+Judul: {title}
+Deskripsi: {description[:300]}
 
-Buat 1 judul pendek (max 60 karakter) dalam bahasa Indonesia:"""
+Tentukan rekomendasi terbaik untuk pembuatan clip 9:16:
+1. tracking: "speaker" jika video berupa podcast/wawancara 2 orang, "face" jika vlogger/pembicara tunggal, atau "center" jika pemandangan/gameplay.
+2. num_clips: Jumlah klip ideal (3 - 8 klip).
+
+Format WAJIB JSON murni:
+{{"tracking": "speaker", "num_clips": 5, "reason": "Podcast 2 orang membutuhkan split-screen speaker tracking."}}"""
 
     try:
         resp = await client.chat.completions.create(
             model=NOVITA_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.5,
-            max_tokens=100,
+            temperature=0.2,
+            max_tokens=300,
         )
-        return resp.choices[0].message.content.strip()[:100]
-    except:
+        text = _extract_response_text(resp)
+        text = text.replace("```json", "").replace("```", "").strip()
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            res = json.loads(match.group(0))
+            return {
+                "mode": "ai",
+                "tracking": res.get("tracking", "face"),
+                "num_clips": max(1, min(10, int(res.get("num_clips", 5)))),
+                "reason": res.get("reason", "Deteksi otomatis LLM")
+            }
+        return default_preset
+    except Exception as e:
+        logger.error(f"Auto detect settings failed: {e}")
+        return default_preset
+
+async def generate_title(transcript: str, video_title: str) -> str:
+    """Buat judul menarik (hook title) untuk klip"""
+    if not client:
         return f"Klip dari: {video_title[:100]}"
 
-def _fallback_heuristic(transcript: str, duration: int = 0) -> list[dict]:
-    """Heuristic: segmen berdasarkan kata kunci atau interval waktu video"""
+    prompt = f"""Buat 1 judul viral pendek (maksimal 50 karakter) dalam Bahasa Indonesia untuk klip TikTok/Reels ini:
+Judul Asli: {video_title}
+Teks Percakapan: {transcript[:400]}
+
+Jawab judulnya saja tanpa tanda kutip:"""
+
+    try:
+        resp = await client.chat.completions.create(
+            model=NOVITA_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            max_tokens=100,
+        )
+        text = _extract_response_text(resp)
+        return text.strip().replace('"', '')[:80] or f"Klip dari: {video_title[:80]}"
+    except Exception as e:
+        logger.error(f"Generate title error: {e}")
+        return f"Klip dari: {video_title[:80]}"
+
+def _fallback_heuristic(transcript: str, duration: int = 0, num_clips: int = 5) -> list[dict]:
+    """Heuristic: segmen berdasarkan kata kunci atau interval waktu video yang merata hingga num_clips (max 10)"""
+    num_clips = max(1, min(10, num_clips))
     keywords = ["best", "amazing", "wow", "important", "watch this", "wait for it",
                 "let me show", "check this", "first", "finally", "kesimpulan", "penting",
                 "menarik", "luar biasa", "kunci", "utama", "tips", "rahasia"]
@@ -93,21 +189,29 @@ def _fallback_heuristic(transcript: str, duration: int = 0) -> list[dict]:
     segments.sort(key=lambda x: x["score"], reverse=True)
 
     moments = []
-    for seg in segments[:5]:
+    for seg in segments[:num_clips]:
+        start = max(0, seg["index"] * 5)
         moments.append({
-            "start": max(0, seg["index"] * 5),
-            "end": min(seg["index"] * 5 + 45, seg["index"] * 5 + 60),
+            "start": start,
+            "end": start + 45,
             "reason": f"Momen menarik: {seg['text'][:50]}..."
         })
 
-    # Jika momen kurang dari 3, buat variasi interval otomatis berdasarkan durasi video
-    if len(moments) < 3:
-        dur = max(duration, 180)
-        interval = max(45, dur // 4)
-        moments = [
-            {"start": 5, "end": min(dur, 50), "reason": "Highlights Pembukaan Video"},
-            {"start": min(dur - 60, interval), "end": min(dur - 15, interval + 45), "reason": "Highlights Momen Kunci Video"},
-            {"start": min(dur - 50, interval * 2), "end": min(dur - 5, interval * 2 + 45), "reason": "Highlights Momen Klimaks Video"},
-        ]
+    # Jika jumlah momen kurang dari num_clips, bagi durasi video secara merata menjadi num_clips segmen
+    if len(moments) < num_clips:
+        dur = max(duration, 300)
+        clip_len = 45
+        step = max(clip_len + 10, (dur - 30) // max(1, num_clips))
+        
+        moments = []
+        for i in range(num_clips):
+            start = 10 + i * step
+            end = min(dur - 5, start + clip_len)
+            if start < dur - 10:
+                moments.append({
+                    "start": start,
+                    "end": end,
+                    "reason": f"Segment Momen Highlight #{i + 1}"
+                })
 
-    return moments[:5]
+    return moments[:num_clips]

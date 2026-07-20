@@ -167,6 +167,33 @@ async def parse_subtitle_to_text(subtitle_path: str) -> str:
 
     return " ".join(lines)
 
+async def detect_audio_peaks(video_path: str) -> list[dict]:
+    """Mendeteksi puncak volume suara (shouting/laughter) menggunakan FFmpeg astats filter"""
+    if not video_path or not os.path.exists(video_path):
+        return []
+    cmd = [
+        get_ffmpeg_cmd(), "-i", video_path,
+        "-af", "astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level",
+        "-f", "null", "-"
+    ]
+    try:
+        returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
+        text = stderr.decode("utf-8", errors="ignore")
+        peaks = []
+        for line in text.split("\n"):
+            if "RMS_level" in line:
+                m = re.search(r"pts_time:([\d\.]+).*RMS_level=([-\d\.]+)", line)
+                if m:
+                    pts = float(m.group(1))
+                    rms = float(m.group(2))
+                    if rms > -15.0:  # High volume energy
+                        peaks.append({"start": max(0, int(pts) - 5), "end": int(pts) + 35, "rms": rms})
+        peaks.sort(key=lambda x: x["rms"], reverse=True)
+        return peaks[:5]
+    except Exception as e:
+        logger.error(f"Error detecting audio peaks: {e}")
+        return []
+
 async def clip_video(
     video_path: str,
     output_path: str,
@@ -269,6 +296,7 @@ async def get_video_info(youtube_url: str, cookie_path: Optional[str] = None) ->
                         "category": info.get("categories", [None])[0] if info.get("categories") else None,
                         "tags": info.get("tags", []),
                         "thumbnail": str(info.get("thumbnail", "") or ""),
+                        "heatmap": info.get("heatmap", []),
                         "error": None,
                     }
             except Exception:

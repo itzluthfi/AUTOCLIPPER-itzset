@@ -26,6 +26,7 @@ class SubmitURL(BaseModel):
     url: str = Field(min_length=10, max_length=500)
     mode: str = Field(default="heuristic", pattern="^(heuristic|ai)$")
     tracking: str = Field(default="center", pattern="^(center|face|speaker|none)$")
+    num_clips: Optional[int] = Field(default=5, ge=1, le=10)
 
 class ClipEditRequest(BaseModel):
     title: Optional[str] = Field(default=None, max_length=500)
