@@ -50,54 +50,78 @@ def _run_cmd_sync(cmd: list[str]) -> tuple[int, bytes, bytes]:
     return res.returncode, res.stdout, res.stderr
 
 async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[str] = None, sub_lang: str = "id") -> Optional[str]:
-    """Download video dari YouTube, return path ke file"""
+    """Download video dari YouTube, return path ke file.
+
+    Menggunakan smart fallback chain 5-tahap untuk mengatasi:
+    - Android client tidak support cookies (skip ketika cookie diberikan)
+    - YouTube SABR experiment (format hilang di beberapa client)
+    - n-challenge JS solver hilang (beberapa client punya workaround)
+    - Age-restricted & private video (butuh cookie + client yang benar)
+    """
     output_path = os.path.join(DOWNLOAD_DIR, video_id)
     os.makedirs(output_path, exist_ok=True)
-
     langs_pref = "id,id-orig,en,auto" if sub_lang == "id" else "en,en-orig,id,auto"
+    has_cookie = bool(cookie_path and os.path.exists(cookie_path))
 
-    cmd = [
-        *get_ytdlp_cmd(),
-        "--extractor-args", "youtube:player_client=android,web,tv",
-        "-f", "bv*[height<=720]+ba/b[height<=720]/b/best",
-        "--write-subs", "--write-auto-subs",
-        "--sub-langs", langs_pref,
-        "-o", os.path.join(output_path, "%(id)s.%(ext)s"),
+    def _base_cmd(client_args: str, fmt: str, with_subs: bool = True) -> list:
+        """Bangun command yt-dlp dengan parameter tertentu."""
+        c = [
+            *get_ytdlp_cmd(),
+            "--no-playlist",
+            "--extractor-args", f"youtube:player_client={client_args}",
+            "-f", fmt,
+            "-o", os.path.join(output_path, "%(id)s.%(ext)s"),
+        ]
+        if with_subs:
+            c += ["--write-subs", "--write-auto-subs", "--sub-langs", langs_pref]
+        if has_cookie:
+            c += ["--cookies", cookie_path]
+        c.append(youtube_url)
+        return c
+
+    # 5-tahap fallback chain, berhenti saat salah satu berhasil
+    # Catatan: android tidak support cookies, jadi jika ada cookie, skip android di tahap 1
+    strategies = [
+        # Tahap 1: Strategi terbaik — android (tanpa cookie) + web + tv, dengan subtitle
+        ("android,web,tv", "bv*[height<=720]+ba/b[height<=720]/b/best", True),
+        # Tahap 2: web+tv saja (aman dengan cookie), dengan subtitle
+        ("web,tv", "bv*[height<=720]+ba/b[height<=720]/b/best", True),
+        # Tahap 3: web saja + format paling fleksibel, tanpa subtitle
+        ("web", "b[height<=720]/b/best", False),
+        # Tahap 4: mweb (YouTube versi mobile web) — kadang lolos SABR
+        ("mweb,web", "b/best", False),
+        # Tahap 5: Last resort — biarkan yt-dlp pilih client sendiri
+        ("all", "b/best", False),
     ]
-    if cookie_path and os.path.exists(cookie_path):
-        cmd.extend(["--cookies", cookie_path])
-    cmd.append(youtube_url)
 
     last_stderr = ""
-    try:
-        returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
-        last_stderr = stderr.decode(errors='ignore')
-        if returncode != 0:
-            logger.error(f"yt-dlp failed: {last_stderr}")
-            # Coba fallback tanpa subtitle & format paling fleksibel
-            cmd = [
-                *get_ytdlp_cmd(),
-                "--extractor-args", "youtube:player_client=android,web,tv",
-                "-f", "b/best",
-                "-o", os.path.join(output_path, "%(id)s.%(ext)s"),
-            ]
-            if cookie_path and os.path.exists(cookie_path):
-                cmd.extend(["--cookies", cookie_path])
-            cmd.append(youtube_url)
-            returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
-            if returncode != 0:
-                last_stderr = stderr.decode(errors='ignore')
-                logger.error(f"yt-dlp retry failed: {last_stderr}")
-    except Exception as e:
-        logger.error(f"yt-dlp error: {e}")
-        last_stderr = str(e)
+    for idx, (client, fmt, with_subs) in enumerate(strategies):
+        # Jika ada cookie, skip strategi yang pakai android (tidak kompatibel)
+        if has_cookie and "android" in client and not any(c in client for c in ["web", "tv"]):
+            logger.info(f"[download] Strategi {idx+1} skip (android+cookie inkompatibel)")
+            continue
 
-    # Cari file video yang berhasil terunduh di dalam folder output_path
+        cmd = _base_cmd(client, fmt, with_subs)
+        logger.info(f"[download] Mencoba strategi {idx+1}/5 — client={client}, fmt={fmt}, subs={with_subs}")
+        try:
+            returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
+            last_stderr = stderr.decode(errors="ignore")
+            if returncode == 0:
+                logger.info(f"[download] Berhasil dengan strategi {idx+1}")
+                break
+            else:
+                logger.warning(f"[download] Strategi {idx+1} gagal (code={returncode}): {last_stderr[-300:]}")
+        except Exception as e:
+            logger.error(f"[download] Strategi {idx+1} exception: {e}")
+            last_stderr = str(e)
+
+    # Cari file video yang berhasil terunduh
     if os.path.exists(output_path):
-        for f in os.listdir(output_path):
+        for f in sorted(os.listdir(output_path)):
             if f.endswith((".mp4", ".mkv", ".webm")):
                 return os.path.join(output_path, f)
 
+    logger.error(f"[download] Semua strategi gagal. Stderr terakhir: {last_stderr[-500:]}")
     return None
 
 async def extract_subtitles(video_path: str, output_dir: str, sub_lang: str = "id") -> Optional[str]:
