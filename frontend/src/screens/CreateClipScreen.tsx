@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, Image, useWindowDimensions } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, Image, useWindowDimensions, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
@@ -30,8 +29,13 @@ export default function CreateClipScreen({ navigation }: any) {
   const [loading, setLoading] = useState(false);
   const [userRole, setUserRole] = useState<string>('free');
   const [hasCookie, setHasCookie] = useState<boolean | null>(null);
+  const [isPlayingPreview, setIsPlayingPreview] = useState<boolean>(false);
 
   const youtubeId = extractYouTubeId(url.trim());
+
+  useEffect(() => {
+    setIsPlayingPreview(false);
+  }, [youtubeId]);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -200,25 +204,54 @@ export default function CreateClipScreen({ navigation }: any) {
               backgroundColor: isDark ? '#141414' : '#f1f5f9',
               borderWidth: 1, borderColor: colors.primary + '60',
             }}>
-              <View style={{ position: 'relative', height: 160, backgroundColor: '#000' }}>
-                <Image
-                  source={{ uri: `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` }}
-                  style={{ width: '100%', height: '100%', resizeMode: 'cover', opacity: 0.85 }}
-                />
-                <View style={{
-                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                  justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.25)',
-                }}>
-                  <Ionicons name="play-circle" size={48} color="#FF0000" />
-                </View>
-                <View style={{
-                  position: 'absolute', top: 8, right: 8,
-                  backgroundColor: '#FF0000', paddingVertical: 4, paddingHorizontal: 8,
-                  borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 4,
-                }}>
-                  <Ionicons name="logo-youtube" size={12} color="#fff" />
-                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>YouTube</Text>
-                </View>
+              <View style={{ position: 'relative', height: 210, backgroundColor: '#000' }}>
+                {Platform.OS === 'web' && isPlayingPreview ? (
+                  <iframe
+                    src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1`}
+                    style={{ width: '100%', height: '100%', border: 'none' }}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (Platform.OS === 'web') {
+                        setIsPlayingPreview(true);
+                      } else {
+                        Linking.openURL(`https://www.youtube.com/watch?v=${youtubeId}`);
+                      }
+                    }}
+                    activeOpacity={0.85}
+                    style={{ width: '100%', height: '100%', position: 'relative' }}
+                  >
+                    <Image
+                      source={{ uri: `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` }}
+                      style={{ width: '100%', height: '100%', resizeMode: 'cover', opacity: 0.88 }}
+                    />
+                    <View style={{
+                      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                      justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.35)',
+                    }}>
+                      <View style={{
+                        backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 30, padding: 4,
+                        borderWidth: 2, borderColor: '#FF0000',
+                      }}>
+                        <Ionicons name="play-circle" size={56} color="#FF0000" />
+                      </View>
+                      <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 12, marginTop: 6, textShadowColor: '#000', textShadowRadius: 4 }}>
+                        Klik untuk Putar Preview Video
+                      </Text>
+                    </View>
+                    <View style={{
+                      position: 'absolute', top: 8, right: 8,
+                      backgroundColor: '#FF0000', paddingVertical: 4, paddingHorizontal: 8,
+                      borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 4,
+                    }}>
+                      <Ionicons name="logo-youtube" size={12} color="#fff" />
+                      <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>YouTube</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
               </View>
               <View style={{ padding: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -228,7 +261,7 @@ export default function CreateClipScreen({ navigation }: any) {
                   </Text>
                 </View>
                 <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '500' }}>
-                  Siap Diproses
+                  {isPlayingPreview ? 'Sedang Memutar' : 'Klik Play untuk Nonton'}
                 </Text>
               </View>
             </View>
