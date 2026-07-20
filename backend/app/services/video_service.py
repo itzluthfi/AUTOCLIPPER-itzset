@@ -49,16 +49,18 @@ def _run_cmd_sync(cmd: list[str]) -> tuple[int, bytes, bytes]:
     )
     return res.returncode, res.stdout, res.stderr
 
-async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[str] = None) -> Optional[str]:
+async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[str] = None, sub_lang: str = "id") -> Optional[str]:
     """Download video dari YouTube, return path ke file"""
     output_path = os.path.join(DOWNLOAD_DIR, video_id)
     os.makedirs(output_path, exist_ok=True)
+
+    langs_pref = "id,id-orig,en,auto" if sub_lang == "id" else "en,en-orig,id,auto"
 
     cmd = [
         *get_ytdlp_cmd(),
         "-f", "best[height<=720]",
         "--write-subs", "--write-auto-subs",
-        "--sub-langs", "en,id",
+        "--sub-langs", langs_pref,
         "-o", os.path.join(output_path, "%(id)s.%(ext)s"),
     ]
     if cookie_path and os.path.exists(cookie_path):
@@ -96,19 +98,23 @@ async def download_video(youtube_url: str, video_id: str, cookie_path: Optional[
 
     return None
 
-async def extract_subtitles(video_path: str, output_dir: str) -> Optional[str]:
-    """Ekstrak subtitle dari video. Return path ke file srt atau None."""
-    # Cek file subtitle yang udah ada
-    base = os.path.splitext(video_path)[0]
-    for ext in [".srt", ".vtt", ".ass"]:
-        sub_file = base + ext
-        if os.path.exists(sub_file):
-            return sub_file
+async def extract_subtitles(video_path: str, output_dir: str, sub_lang: str = "id") -> Optional[str]:
+    """Ekstrak subtitle dari video. Return path ke file srt/vtt atau None."""
+    folder = os.path.dirname(video_path)
+    if not os.path.exists(folder):
+        return None
 
-    # Cari di direktori
-    for f in os.listdir(os.path.dirname(video_path)):
-        if f.endswith((".srt", ".vtt", ".ass")):
-            return os.path.join(os.path.dirname(video_path), f)
+    files = os.listdir(folder)
+    # 1. Cari file subtitle yang sesuai bahasa (mis. .id.vtt, .id.srt, .id-orig.vtt)
+    pref_tag = f".{sub_lang}."
+    for f in files:
+        if f.endswith((".vtt", ".srt", ".ass")) and (pref_tag in f.lower() or f"{sub_lang}-orig" in f.lower()):
+            return os.path.join(folder, f)
+
+    # 2. Fallback ke sembarang file subtitle yang ada
+    for f in files:
+        if f.endswith((".vtt", ".srt", ".ass")):
+            return os.path.join(folder, f)
 
     return None
 
@@ -195,6 +201,20 @@ async def detect_audio_peaks(video_path: str) -> list[dict]:
         logger.error(f"Error detecting audio peaks: {e}")
         return []
 
+def generate_tts_audio(text: str, output_path: str, lang: str = "id") -> bool:
+    """Buat file audio MP3 dari teks judul hook menggunakan gTTS"""
+    try:
+        from gtts import gTTS
+        clean_text = text.replace('"', '').replace("'", "").replace(":", "").strip()
+        if not clean_text:
+            return False
+        tts = gTTS(text=clean_text[:120], lang=lang if lang in ["id", "en"] else "id")
+        tts.save(output_path)
+        return os.path.exists(output_path)
+    except Exception as e:
+        logger.error(f"TTS generation error: {e}")
+        return False
+
 async def clip_video(
     video_path: str,
     output_path: str,
@@ -203,14 +223,21 @@ async def clip_video(
     tracking: str = "none",
     add_subtitle: bool = False,
     subtitle_path: Optional[str] = None,
-    hook: bool = False
+    title: Optional[str] = None,
+    sub_lang: str = "id"
 ) -> bool:
-    """Klip video + tracking (Center / Face / Speaker Split-Screen) + subtitle"""
+    """Klip video + tracking (Center / Face / Speaker Split-Screen) + subtitle + Hook Title Overlay"""
     duration = end - start
     if duration <= 0:
         logger.error(f"Invalid clip range: start={start} end={end}")
         return False
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    # Buat audio TTS Voiceover jika title disediakan
+    tts_audio_path = None
+    if title:
+        tts_audio_path = os.path.join(os.path.dirname(output_path), f"tts_{os.path.basename(output_path)}.mp3")
+        generate_tts_audio(title, tts_audio_path, lang=sub_lang)
 
     # Menentukan rantai filter video berdasarkan mode tracking
     if tracking == "speaker":
@@ -234,6 +261,15 @@ async def clip_video(
             vf_filter += f";[v]{sub_filter}[outv]"
         else:
             filters.append(sub_filter)
+
+    # Tambahkan Title Card Overlay di awal video (3 detik pertama) jika judul ada
+    if title:
+        safe_title = title.replace("'", "").replace(":", " ").replace("\\", "")[:45]
+        title_overlay = f"drawtext=text='{safe_title}':x=(w-text_w)/2:y=h*0.12:fontsize=42:fontcolor=yellow:box=1:boxcolor=black@0.7:boxborderw=10:enable='between(t,0,3)'"
+        if filter_complex:
+            vf_filter = vf_filter.replace("[outv]", f"[vsub];[vsub]{title_overlay}[outv]")
+        else:
+            filters.append(title_overlay)
 
     burn_subs = add_subtitle and subtitle_path and os.path.exists(subtitle_path)
     if burn_subs:

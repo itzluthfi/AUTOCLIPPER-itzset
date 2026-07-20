@@ -16,7 +16,8 @@ export default function CreateClipScreen({ navigation }: any) {
   const { colors, isDark } = useTheme();
   const [url, setUrl] = useState('');
   const [mode, setMode] = useState<'heuristic' | 'ai'>('heuristic');
-  const [tracking, setTracking] = useState<'center' | 'face' | 'speaker'>('center');
+  const [tracking, setTracking] = useState<'auto' | 'center' | 'face' | 'speaker'>('auto');
+  const [subLang, setSubLang] = useState<'id' | 'en' | 'auto'>('id');
   const [numClips, setNumClips] = useState<number>(5);
   const [autoDetecting, setAutoDetecting] = useState<boolean>(false);
   const [autoReason, setAutoReason] = useState<string | null>(null);
@@ -95,7 +96,7 @@ export default function CreateClipScreen({ navigation }: any) {
     }
     setLoading(true);
     try {
-      const result = await submitVideo(url.trim(), mode, tracking, numClips);
+      const result = await submitVideo(url.trim(), mode, tracking, numClips, subLang);
       try {
         const activeJobsStr = await AsyncStorage.getItem('active_jobs');
         const activeJobs = activeJobsStr ? JSON.parse(activeJobsStr) : [];
@@ -336,32 +337,65 @@ export default function CreateClipScreen({ navigation }: any) {
           ))}
         </View>
 
-        {/* Tracking Selector */}
+        {/* Subtitle Language Selector */}
         <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
-          Framing & Tracking Wajah
+          🌐 Bahasa Subtitle Video
         </Text>
         <View style={{
-          flexDirection: 'row', gap: 8, marginBottom: 20,
-          padding: 16, borderRadius: 12,
+          flexDirection: 'row', gap: 8, marginBottom: 16,
+          padding: 12, borderRadius: 12,
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
         }}>
           {[
-            { key: 'center' as const, label: 'Center', icon: 'square-outline', desc: 'Tengah' },
+            { key: 'id' as const, label: 'Bahasa Indonesia (id)', icon: 'language-outline' },
+            { key: 'en' as const, label: 'English (en)', icon: 'globe-outline' },
+            { key: 'auto' as const, label: 'Auto Detect', icon: 'sparkles-outline' },
+          ].map(l => (
+            <TouchableOpacity
+              key={l.key}
+              onPress={() => setSubLang(l.key)}
+              style={{
+                flex: 1, paddingVertical: 8, paddingHorizontal: 6, borderRadius: 8,
+                backgroundColor: subLang === l.key ? colors.primary + '20' : 'transparent',
+                borderWidth: 1, borderColor: subLang === l.key ? colors.primary : colors.border,
+                alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 4,
+              }}
+            >
+              <Ionicons name={l.icon as any} size={14} color={subLang === l.key ? colors.primary : colors.muted} />
+              <Text style={{ fontWeight: '600', color: subLang === l.key ? colors.primary : colors.text, fontSize: 11 }}>
+                {l.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Framing & Tracking Selector */}
+        <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
+          🎬 Mode Framing & Tracking Wajah
+        </Text>
+        <View style={{
+          flexDirection: 'row', gap: 8, marginBottom: 20,
+          padding: 12, borderRadius: 12,
+          backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+        }}>
+          {[
+            { key: 'auto' as const, label: '🤖 Auto Mix', icon: 'sparkles', desc: 'Dinamis per Klip' },
             { key: 'face' as const, label: 'Face Track', icon: 'person-outline', desc: 'Lacak Wajah' },
             { key: 'speaker' as const, label: 'Split Screen', icon: 'grid-outline', desc: 'Podcast 2 Orang' },
+            { key: 'center' as const, label: 'Center', icon: 'square-outline', desc: 'Tengah' },
           ].map(t => (
             <TouchableOpacity
               key={t.key}
               onPress={() => setTracking(t.key)}
               style={{
-                flex: 1, padding: 10, borderRadius: 8,
+                flex: 1, padding: 8, borderRadius: 8,
                 backgroundColor: tracking === t.key ? colors.primary + '20' : 'transparent',
                 borderWidth: 1, borderColor: tracking === t.key ? colors.primary : colors.border,
                 alignItems: 'center',
               }}
             >
-              <Ionicons name={t.icon as any} size={18} color={tracking === t.key ? colors.primary : colors.muted} />
-              <Text style={{ fontWeight: '600', color: tracking === t.key ? colors.primary : colors.text, marginTop: 4, fontSize: 12 }}>
+              <Ionicons name={t.icon as any} size={16} color={tracking === t.key ? colors.primary : colors.muted} />
+              <Text style={{ fontWeight: '600', color: tracking === t.key ? colors.primary : colors.text, marginTop: 4, fontSize: 11, textAlign: 'center' }}>
                 {t.label}
               </Text>
             </TouchableOpacity>

@@ -175,13 +175,13 @@ async def google_callback(code: str, state: str = None, db: AsyncSession = Depen
 ACTIVE_STATUSES = ["pending", "downloading", "subtitling", "detecting",
                    "clipping", "tracking", "finalizing", "processing"]
 
-def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: str, tracking: str, num_clips: int = 5):
+def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: str, tracking: str, num_clips: int = 5, sub_lang: str = "id"):
     """Kirim task ke Celery/Redis; jika gagal, jalankan di thread background lokal."""
     try:
         import redis as redis_lib
         r = redis_lib.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_timeout=1)
         r.ping()
-        process_video.delay(video_id, youtube_url, user_id, mode, tracking, num_clips)
+        process_video.delay(video_id, youtube_url, user_id, mode, tracking, num_clips, sub_lang)
         logger.info(f"Queued video {video_id} in Celery/Redis.")
     except Exception:
         logger.info(f"Redis unavailable. Processing video {video_id} in local background thread.")
@@ -189,7 +189,7 @@ def _dispatch_processing(video_id: int, youtube_url: str, user_id: int, mode: st
 
         def run_local_task():
             try:
-                run_process_video(video_id, youtube_url, user_id, mode, tracking, num_clips)
+                run_process_video(video_id, youtube_url, user_id, mode, tracking, num_clips, sub_lang)
             except Exception as e:
                 logger.error(f"Local video processing thread failed: {e}")
 
@@ -296,7 +296,8 @@ async def submit_video(
     await db.commit()
     await db.refresh(video)
 
-    _dispatch_processing(video.id, video.youtube_url, user.id, data.mode, data.tracking, num_clips)
+    sub_lang = getattr(data, "sub_lang", "id") or "id"
+    _dispatch_processing(video.id, video.youtube_url, user.id, data.mode, data.tracking, num_clips, sub_lang)
 
     return {"status": "queued", "video_id": video.id}
 
@@ -324,15 +325,6 @@ async def get_video(video_id: int, user: User = Depends(get_current_user), db: A
     video = result.scalar_one_or_none()
     if not video:
         raise HTTPException(404, "Video not found")
-
-    # Timeout check: jika status aktif lebih dari 15 menit, tandai failed
-    if video.status in ACTIVE_STATUSES and video.created_at:
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc) if video.created_at.tzinfo else datetime.utcnow()
-        if (now - video.created_at).total_seconds() > 900:
-            video.status = "failed"
-            video.error_message = "Proses dibatalkan karena melebihi batas waktu server (timeout 15 menit)."
-            await db.commit()
 
     return {
         "id": video.id,

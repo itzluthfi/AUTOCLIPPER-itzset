@@ -62,8 +62,8 @@ def _clamp_moments(moments: list, duration: int) -> list:
 
 
 async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
-                               mode: str = "heuristic", tracking: str = "center",
-                               num_clips: int = 5):
+                               mode: str = "heuristic", tracking: str = "auto",
+                               num_clips: int = 5, sub_lang: str = "id"):
     from sqlalchemy import select
     from app.models.models import Video, Clip, User, CreditTransaction
     from app.services.video_service import (
@@ -157,27 +157,43 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                 [{"start": 10, "end": 60, "reason": "Pembukaan video"}], duration
             ) or [{"start": 0, "end": min(45, duration or 45), "reason": "Pembukaan video"}]
 
-        # 5. Clipping
+        # 5. Clipping & Dynamic Framing
         await set_state(status="clipping", progress=60)
         os.makedirs(CLIPS_DIR, exist_ok=True)
         clip_results = []
+        
+        # Opsi framing dinamis bergantian (Auto Mix)
+        mix_tracking_cycle = ["face", "speaker", "face", "center", "speaker"]
+
         for i, moment in enumerate(moments):
             progress_step = min(90, 60 + int((i / max(1, len(moments))) * 30))
+            
+            # Tentukan mode tracking spesifik untuk klip ini jika mode 'auto' atau 'mix'
+            current_clip_tracking = tracking
+            if tracking in ["auto", "mix"]:
+                current_clip_tracking = mix_tracking_cycle[i % len(mix_tracking_cycle)]
+
             await set_state(
                 status="clipping",
                 progress=progress_step,
-                step_log=f"[5/5] Pemotongan klip {i+1}/{len(moments)}, framing vertikal 9:16, & burn-in subtitle..."
+                step_log=f"[5/5] Memotong klip {i+1}/{len(moments)} (Mode {current_clip_tracking.upper()}), subtitle & Hook Intro TTS..."
             )
             
+            # Generasi judul viral bersih per klip
+            moment_text = transcript[int(moment["start"] * 5): int(moment["end"] * 5)] if transcript else ""
+            clean_clip_title = await generate_title(moment_text, info.get("title", ""))
+
             clip_path = os.path.join(CLIPS_DIR, f"clip_{video_id}_{i}.mp4")
             success = await clip_video(
                 video_path=video_path,
                 output_path=clip_path,
                 start=moment["start"],
                 end=moment["end"],
-                tracking=tracking,
+                tracking=current_clip_tracking,
                 add_subtitle=bool(sub_path),
                 subtitle_path=sub_path,
+                title=clean_clip_title,
+                sub_lang=sub_lang
             )
             if not success:
                 logger.error(f"Clip {i} video {video_id} gagal dibuat")
@@ -187,21 +203,18 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
             try:
                 from app.services.video_service import get_ffmpeg_cmd, _run_cmd_sync
                 cmd_thumb = [
-                    get_ffmpeg_cmd(), "-y", "-i", clip_path, "-ss", "00:00:01",
-                    "-vframes", "1", thumb_path
+                    get_ffmpeg_cmd(), "-y",
+                    "-ss", str(moment["start"] + 2),
+                    "-i", video_path,
+                    "-vframes", "1",
+                    "-q:v", "2",
+                    thumb_path
                 ]
-                returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd_thumb)
-                if returncode != 0 or not os.path.exists(thumb_path):
-                    thumb_path = None
+                await asyncio.to_thread(_run_cmd_sync, cmd_thumb)
             except Exception as e:
-                logger.error(f"Gagal generate thumbnail: {e}")
-                thumb_path = None
+                logger.error(f"Failed to generate thumbnail: {e}")
 
-            title = await generate_title(
-                (moment.get("reason") or transcript[:200]), info.get("title", "")
-            )
             clip_results.append({
-                "path": clip_path,
                 "thumbnail_path": thumb_path,
                 "start": moment["start"],
                 "end": moment["end"],
@@ -268,15 +281,15 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
 
 
 def run_process_video(video_id: int, youtube_url: str, user_id: int,
-                      mode: str = "heuristic", tracking: str = "center",
-                      num_clips: int = 5):
+                      mode: str = "heuristic", tracking: str = "auto",
+                      num_clips: int = 5, sub_lang: str = "id"):
     """Entry point sinkron — dipakai Celery task maupun thread fallback lokal."""
-    return asyncio.run(_process_video_async(video_id, youtube_url, user_id, mode, tracking, num_clips))
+    return asyncio.run(_process_video_async(video_id, youtube_url, user_id, mode, tracking, num_clips, sub_lang))
 
 
 @celery_app.task(name="process_video")
 def process_video(video_id: int, youtube_url: str, user_id: int,
-                  mode: str = "heuristic", tracking: str = "center",
-                  num_clips: int = 5):
+                  mode: str = "heuristic", tracking: str = "auto",
+                  num_clips: int = 5, sub_lang: str = "id"):
     """Proses video: download → subtitle → deteksi highlight → clip → simpan → cleanup."""
-    return run_process_video(video_id, youtube_url, user_id, mode, tracking, num_clips)
+    return run_process_video(video_id, youtube_url, user_id, mode, tracking, num_clips, sub_lang)

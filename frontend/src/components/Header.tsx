@@ -35,7 +35,13 @@ export function Header({ title = 'AutoClipper', showBack, rightAction }: Props) 
     }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
         {showBack && (
-          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 12, padding: 4 }}>
+          <TouchableOpacity onPress={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              (navigation as any).navigate('MainTabs');
+            }
+          }} style={{ marginRight: 12, padding: 4 }}>
             <Ionicons name="arrow-back" size={22} color={colors.primary} />
           </TouchableOpacity>
         )}

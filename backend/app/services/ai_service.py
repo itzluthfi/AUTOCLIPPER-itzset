@@ -146,26 +146,45 @@ Format WAJIB JSON murni:
 async def generate_title(transcript: str, video_title: str) -> str:
     """Buat judul menarik (hook title) untuk klip"""
     if not client:
-        return f"Klip dari: {video_title[:100]}"
+        return f"Klip: {video_title[:60]}"
 
-    prompt = f"""Buat 1 judul viral pendek (maksimal 50 karakter) dalam Bahasa Indonesia untuk klip TikTok/Reels ini:
+    prompt = f"""Buat 1 judul viral pendek (3-7 kata, maksimal 40 karakter) dalam Bahasa Indonesia untuk klip TikTok/Reels ini:
 Judul Asli: {video_title}
 Teks Percakapan: {transcript[:400]}
 
-Jawab judulnya saja tanpa tanda kutip:"""
+PENTING WAJIB:
+1. HANYA BALAS DENGAN TEKS JUDUL VIRAL SAJA.
+2. DILARANG MENULIS PEMIKIRAN, DILARANG MENULIS 'Hmm', 'User', 'Berikut', 'Tentu', atau Penjelasan.
+3. CONTOH BALASAN VALID: Rahasia Sukses Usaha Muda"""
 
     try:
         resp = await client.chat.completions.create(
             model=NOVITA_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.4,
-            max_tokens=100,
+            temperature=0.3,
+            max_tokens=50,
         )
         text = _extract_response_text(resp)
-        return text.strip().replace('"', '')[:80] or f"Klip dari: {video_title[:80]}"
+        text = text.replace('"', '').replace("'", "").strip()
+        
+        # Filter & bersihkan baris pemikiran/reasoning AI
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        clean_title = ""
+        for line in reversed(lines):
+            # Abai baris yang berisi instruksi ulang atau diawali kata kunci reasoning
+            if re.match(r"^(hmm|user|berikut|tentu|judul|pilihan|jawab|rekomendasi|analisis)", line, re.IGNORECASE):
+                continue
+            if len(line) >= 4:
+                clean_title = line
+                break
+        if not clean_title and lines:
+            clean_title = lines[-1]
+            
+        clean_title = re.sub(r"^(hmm,?\s*|user\s+butuh\s*|berikut\s+judul\s*:?\s*)", "", clean_title, flags=re.IGNORECASE).strip()
+        return clean_title[:60] or f"Klip: {video_title[:50]}"
     except Exception as e:
         logger.error(f"Generate title error: {e}")
-        return f"Klip dari: {video_title[:80]}"
+        return f"Klip: {video_title[:50]}"
 
 def _fallback_heuristic(transcript: str, duration: int = 0, num_clips: int = 5) -> list[dict]:
     """Heuristic: segmen berdasarkan kata kunci atau interval waktu video yang merata hingga num_clips (max 10)"""

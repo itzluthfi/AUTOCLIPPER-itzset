@@ -25,8 +25,9 @@ class LoginRequest(_EmailMixin):
 class SubmitURL(BaseModel):
     url: str = Field(min_length=10, max_length=500)
     mode: str = Field(default="heuristic", pattern="^(heuristic|ai)$")
-    tracking: str = Field(default="center", pattern="^(center|face|speaker|none)$")
+    tracking: str = Field(default="auto", pattern="^(center|face|speaker|auto|mix|none)$")
     num_clips: Optional[int] = Field(default=5, ge=1, le=10)
+    sub_lang: Optional[str] = Field(default="id")
 
 class ClipEditRequest(BaseModel):
     title: Optional[str] = Field(default=None, max_length=500)
