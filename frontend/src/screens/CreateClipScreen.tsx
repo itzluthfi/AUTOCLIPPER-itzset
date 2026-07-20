@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, Image, useWindowDimensions, Linking, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, Image, useWindowDimensions, Linking, Platform, ActivityIndicator, Modal } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
@@ -27,6 +27,7 @@ export default function CreateClipScreen({ navigation }: any) {
   const [videoTemplate, setVideoTemplate] = useState<'9:16_crop' | '9:16_blur' | '16:9_landscape' | '9:16_podcast' | '9:16_card'>('9:16_crop');
   const [subStyle, setSubStyle] = useState<'tiktok_yellow' | 'clean_caption' | 'neon_cyber' | 'minimal_movie'>('tiktok_yellow');
   const [subAnim, setSubAnim] = useState<'word_pop' | 'full_sentence'>('word_pop');
+  const [zoomImage, setZoomImage] = useState<{ uri: string; label: string } | null>(null);
   const [numClips, setNumClips] = useState<number>(5);
   const [autoDetecting, setAutoDetecting] = useState<boolean>(false);
   const [autoReason, setAutoReason] = useState<string | null>(null);
@@ -337,32 +338,48 @@ export default function CreateClipScreen({ navigation }: any) {
           🖼️ Template Layout Output Video
         </Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
             {[
-              { key: '9:16_crop' as const, label: '9:16 Full Crop', icon: 'crop-outline', desc: 'Shorts / TikTok (Face Track)' },
-              { key: '9:16_blur' as const, label: '9:16 Blur Background', icon: 'phone-portrait-outline', desc: 'Landscape Utuh + Blur Top/Bottom' },
-              { key: '9:16_podcast' as const, label: '9:16 Podcast Split', icon: 'git-network-outline', desc: '2 Panel Stack Wawancara' },
-              { key: '9:16_card' as const, label: '9:16 Floating Card', icon: 'square-outline', desc: 'Frame Emas + Dark Background' },
-              { key: '16:9_landscape' as const, label: '16:9 Full Landscape', icon: 'tv-outline', desc: 'Format Horizontal Original' },
+              { key: '9:16_crop' as const, label: '9:16 Full Crop', icon: 'crop-outline', desc: 'Shorts / TikTok (Face Track)', imgUri: 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=500' },
+              { key: '9:16_blur' as const, label: '9:16 Blur Background', icon: 'phone-portrait-outline', desc: 'Landscape Utuh + Blur Top/Bottom', imgUri: 'https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=500' },
+              { key: '9:16_podcast' as const, label: '9:16 Podcast Split', icon: 'git-network-outline', desc: '2 Panel Stack Wawancara', imgUri: 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?w=500' },
+              { key: '9:16_card' as const, label: '9:16 Floating Card', icon: 'square-outline', desc: 'Frame Emas + Dark Background', imgUri: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=500' },
+              { key: '16:9_landscape' as const, label: '16:9 Full Landscape', icon: 'tv-outline', desc: 'Format Horizontal Original', imgUri: 'https://images.unsplash.com/photo-1518173946687-a4c8a383392e?w=500' },
             ].map(vt => (
-              <TouchableOpacity
+              <View
                 key={vt.key}
-                onPress={() => setVideoTemplate(vt.key)}
                 style={{
-                  width: 140, padding: 10, borderRadius: 10,
+                  width: 148, padding: 10, borderRadius: 12,
                   backgroundColor: videoTemplate === vt.key ? colors.primary + '20' : colors.card,
                   borderWidth: 1, borderColor: videoTemplate === vt.key ? colors.primary : colors.border,
-                  alignItems: 'center',
+                  justifyContent: 'space-between',
                 }}
               >
-                <Ionicons name={vt.icon as any} size={20} color={videoTemplate === vt.key ? colors.primary : colors.muted} />
-                <Text style={{ fontWeight: '700', color: videoTemplate === vt.key ? colors.primary : colors.text, marginTop: 6, fontSize: 12, textAlign: 'center' }}>
-                  {vt.label}
-                </Text>
-                <Text style={{ color: colors.muted, fontSize: 10, marginTop: 2, textAlign: 'center' }}>
-                  {vt.desc}
-                </Text>
-              </TouchableOpacity>
+                <TouchableOpacity onPress={() => setVideoTemplate(vt.key)} style={{ alignItems: 'center' }}>
+                  <Ionicons name={vt.icon as any} size={20} color={videoTemplate === vt.key ? colors.primary : colors.muted} />
+                  <Text style={{ fontWeight: '700', color: videoTemplate === vt.key ? colors.primary : colors.text, marginTop: 6, fontSize: 12, textAlign: 'center' }}>
+                    {vt.label}
+                  </Text>
+                  <Text style={{ color: colors.muted, fontSize: 10, marginTop: 2, textAlign: 'center', minHeight: 28 }}>
+                    {vt.desc}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Small Zoom Preview Button */}
+                <TouchableOpacity
+                  onPress={() => setZoomImage({ uri: vt.imgUri, label: vt.label })}
+                  style={{
+                    marginTop: 8, paddingVertical: 4, paddingHorizontal: 8,
+                    borderRadius: 6, backgroundColor: colors.primary + '18',
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+                  }}
+                >
+                  <Ionicons name="search" size={12} color={colors.primary} />
+                  <Text style={{ color: colors.primary, fontSize: 10, fontWeight: '700' }}>
+                    🔍 Zoom Preview
+                  </Text>
+                </TouchableOpacity>
+              </View>
             ))}
           </View>
         </ScrollView>
@@ -472,6 +489,46 @@ export default function CreateClipScreen({ navigation }: any) {
 
       </Animated.View>
       </PageContainer>
+
+      {/* ─── INTERACTIVE ZOOM PREVIEW MODAL ─── */}
+      <Modal visible={!!zoomImage} transparent animationType="fade" onRequestClose={() => setZoomImage(null)}>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setZoomImage(null)}
+          style={{
+            flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
+            justifyContent: 'center', alignItems: 'center', padding: 20,
+          }}
+        >
+          <View style={{
+            width: '100%', maxWidth: 520, backgroundColor: colors.card,
+            borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: colors.border,
+            shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.5, shadowRadius: 15,
+          }}>
+            <View style={{ padding: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Text style={{ fontWeight: '700', color: colors.text, fontSize: 14 }}>
+                🔍 Zoom Preview: {zoomImage?.label}
+              </Text>
+              <TouchableOpacity onPress={() => setZoomImage(null)}>
+                <Ionicons name="close-circle" size={24} color={colors.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ height: 380, width: '100%', backgroundColor: '#050505', justifyContent: 'center', alignItems: 'center', padding: 10 }}>
+              <Image
+                source={{ uri: zoomImage?.uri }}
+                style={{ width: '100%', height: '100%', resizeMode: 'contain', borderRadius: 8 }}
+              />
+            </View>
+
+            <View style={{ padding: 12, backgroundColor: colors.background, alignItems: 'center' }}>
+              <Text style={{ color: colors.muted, fontSize: 12 }}>
+                Klik area mana saja untuk menutup zoom preview
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </ScrollView>
   );
 }
