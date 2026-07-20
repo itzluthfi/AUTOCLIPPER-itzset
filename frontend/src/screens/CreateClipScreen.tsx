@@ -30,11 +30,43 @@ export default function CreateClipScreen({ navigation }: any) {
   const [userRole, setUserRole] = useState<string>('free');
   const [hasCookie, setHasCookie] = useState<boolean | null>(null);
   const [isPlayingPreview, setIsPlayingPreview] = useState<boolean>(false);
+  const [videoMeta, setVideoMeta] = useState<{ title?: string; author?: string; duration?: number } | null>(null);
 
   const youtubeId = extractYouTubeId(url.trim());
 
   useEffect(() => {
     setIsPlayingPreview(false);
+    if (!youtubeId) {
+      setVideoMeta(null);
+      return;
+    }
+
+    // 1. Instant oEmbed metadata (Title & Channel Author)
+    fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${youtubeId}&format=json`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.title || data.author_name) {
+          setVideoMeta(prev => ({
+            ...prev,
+            title: data.title,
+            author: data.author_name,
+          }));
+        }
+      })
+      .catch(() => {});
+
+    // 2. Fetch backend metadata & duration
+    autoPresetVideo(url.trim())
+      .then(res => {
+        if (res.title || res.duration) {
+          setVideoMeta(prev => ({
+            ...prev,
+            title: res.title || prev?.title,
+            duration: res.duration || prev?.duration,
+          }));
+        }
+      })
+      .catch(() => {});
   }, [youtubeId]);
 
   // Animations
@@ -253,16 +285,42 @@ export default function CreateClipScreen({ navigation }: any) {
                   </TouchableOpacity>
                 )}
               </View>
-              <View style={{ padding: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                  <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>
-                    Video Terdeteksi (ID: {youtubeId})
+              {/* Rich Metadata Panel */}
+              <View style={{ padding: 12, gap: 6 }}>
+                {videoMeta?.title ? (
+                  <Text style={{ color: colors.text, fontWeight: '700', fontSize: 14, lineHeight: 20 }} numberOfLines={2}>
+                    {videoMeta.title}
                   </Text>
+                ) : null}
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 2 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    {videoMeta?.author ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Ionicons name="person-circle-outline" size={15} color={colors.primary} />
+                        <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>
+                          {videoMeta.author}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {videoMeta?.duration ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Ionicons name="time-outline" size={14} color={colors.muted} />
+                        <Text style={{ color: colors.muted, fontSize: 12, fontWeight: '500' }}>
+                          {Math.floor(videoMeta.duration / 60)}m {videoMeta.duration % 60}s
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.success + '18', paddingVertical: 3, paddingHorizontal: 8, borderRadius: 6 }}>
+                    <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                    <Text style={{ color: colors.success, fontSize: 11, fontWeight: '600' }}>
+                      {isPlayingPreview ? 'Memutar Preview' : 'Siap Diproses'}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '500' }}>
-                  {isPlayingPreview ? 'Sedang Memutar' : 'Klik Play untuk Nonton'}
-                </Text>
               </View>
             </View>
           ) : null}
