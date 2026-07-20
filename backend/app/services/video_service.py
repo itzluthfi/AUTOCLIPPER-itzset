@@ -478,13 +478,18 @@ async def clip_video(
         )
         current_label = "vframe"
     elif video_template == "9:16_podcast" or is_speaker_split:
-        # Podcast Split-Screen (2 Stack Top & Bottom)
-        video_chain.append(
-            f"[{current_label}]crop=iw/2:ih:0:0,scale=1080:960[vtop];"
-            f"[{current_label}]crop=iw/2:ih:iw/2:0,scale=1080:960[vbot];"
-            f"[vtop][vbot]vstack=inputs=2[vframe]"
-        )
-        current_label = "vframe"
+        if is_speaker_split:
+            # Dideteksi 2+ Wajah / Pembicara -> Podcast Split-Screen 2 Panel (Atas & Bawah 960px)
+            video_chain.append(
+                f"[{current_label}]crop=iw/2:ih:0:0,scale=1080:960[vtop];"
+                f"[{current_label}]crop=iw/2:ih:iw/2:0,scale=1080:960[vbot];"
+                f"[vtop][vbot]vstack=inputs=2[vframe]"
+            )
+            current_label = "vframe"
+        else:
+            # Dideteksi 1 Pembicara Saja -> Otomatis Switch ke 1-Speaker Face Track Vertikal Full Height (1080x1920)
+            video_chain.append(f"[{current_label}]crop=ih*9/16:ih,scale=1080:1920[vframe]")
+            current_label = "vframe"
     else:
         # Default: 9:16 Crop Vertikal (Smart Face Track 9:16)
         video_chain.append(f"[{current_label}]crop=ih*9/16:ih,scale=1080:1920[vframe]")
