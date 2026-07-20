@@ -21,9 +21,9 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "")
 
 # LLM Router Integration (Router Endpoint)
-NOVITA_API_KEY = os.getenv("NOVITA_API_KEY", "sk-57c900f79ff8e38e-01seyn-7ecd75b9")
-NOVITA_BASE_URL = os.getenv("NOVITA_BASE_URL", "https://ai.sir-l.web.id/v1")
-NOVITA_MODEL = os.getenv("NOVITA_MODEL", "autoclipper")
+NOVITA_API_KEY = os.getenv("NOVITA_API_KEY") or "sk-57c900f79ff8e38e-01seyn-7ecd75b9"
+NOVITA_BASE_URL = os.getenv("NOVITA_BASE_URL") or "https://ai.sir-l.web.id/v1"
+NOVITA_MODEL = os.getenv("NOVITA_MODEL") or "autoclipper"
 
 # App URLs
 APP_URL = os.getenv("APP_URL", "http://localhost:8000")
