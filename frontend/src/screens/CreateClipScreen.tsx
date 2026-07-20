@@ -1,3 +1,4 @@
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, Image, useWindowDimensions, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -451,8 +452,6 @@ export default function CreateClipScreen({ navigation }: any) {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
-
         </View>
 
         {/* Submit Button */}

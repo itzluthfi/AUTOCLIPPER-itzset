@@ -6,7 +6,7 @@ import { Header } from '../components/Header';
 import { Aurora } from '../components/Aurora';
 import { Button } from '../components/Button';
 import { FadeInView } from '../components/FadeInView';
-import { setApiKey, loginWithPassword, registerWithPassword, API_BASE } from '../services/api';
+import { setApiKey, loginWithPassword, registerWithPassword, getUser, API_BASE } from '../services/api';
 import { toast } from '../components/Toast';
 
 type AuthMode = 'login' | 'register' | 'apikey';

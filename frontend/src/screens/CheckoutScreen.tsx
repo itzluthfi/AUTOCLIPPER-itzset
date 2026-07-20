@@ -7,7 +7,7 @@ import { PageContainer } from '../components/PageContainer';
 import { LiftCard } from '../components/LiftCard';
 import { Button } from '../components/Button';
 import { FadeInView } from '../components/FadeInView';
-import { createCheckout } from '../services/api';
+import { createCheckout, getPublicSettings, CreditPackage } from '../services/api';
 import { toast } from '../components/Toast';
 
 // Fallback jika endpoint settings belum bisa dijangkau — harga final tetap divalidasi server
