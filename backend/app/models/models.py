@@ -36,6 +36,7 @@ class Video(Base):
     video_type: Mapped[str] = mapped_column(sa.String(50), default="general")
     status: Mapped[str] = mapped_column(sa.String(50), default="pending")
     progress: Mapped[int] = mapped_column(sa.Integer, default=0)
+    current_step_log: Mapped[str] = mapped_column(sa.String(500), nullable=True)
     file_path: Mapped[str] = mapped_column(sa.Text, nullable=True)
     error_message: Mapped[str] = mapped_column(sa.Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.utcnow)

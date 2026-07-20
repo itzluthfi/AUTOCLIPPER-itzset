@@ -80,7 +80,8 @@ export default function ProcessingScreen({ route, navigation }: any) {
           : statusInfo.progress;
         
         setCurrentProgress(progress);
-        setCurrentStep(statusInfo.step);
+        const stepMessage = video.current_step_log || statusInfo.step;
+        setCurrentStep(stepMessage);
 
         if (video.status === 'completed') {
           clearInterval(interval);

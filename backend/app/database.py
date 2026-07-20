@@ -37,6 +37,7 @@ async def init_db():
     for ddl in [
         "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)",
         "ALTER TABLE videos ADD COLUMN progress INTEGER DEFAULT 0",
+        "ALTER TABLE videos ADD COLUMN current_step_log VARCHAR(500)",
     ]:
         try:
             async with engine.begin() as conn:

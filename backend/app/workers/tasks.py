@@ -76,7 +76,7 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
     download_dir = os.path.join(DOWNLOAD_DIR, str(video_id))
     num_clips = max(1, min(10, num_clips))
 
-    async def set_state(status: str = None, progress: int = None, error: str = None):
+    async def set_state(status: str = None, progress: int = None, step_log: str = None, error: str = None):
         async with session_factory() as session:
             result = await session.execute(select(Video).where(Video.id == video_id))
             video = result.scalar_one_or_none()
@@ -86,13 +86,15 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                 video.status = status
             if progress is not None:
                 video.progress = progress
+            if step_log is not None:
+                video.current_step_log = step_log
             if error is not None:
                 video.error_message = error[:2000]
             await session.commit()
 
     try:
         # 1. Info video
-        await set_state(status="downloading", progress=5)
+        await set_state(status="downloading", progress=5, step_log="[1/5] Inisialisasi antrean video & mengambil metadata YouTube...")
         info = await get_video_info(youtube_url)
         async with session_factory() as session:
             result = await session.execute(select(Video).where(Video.id == video_id))
@@ -104,6 +106,7 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                 video.duration_seconds = info.get("duration", video.duration_seconds) or 0
                 video.status = "downloading"
                 video.progress = 10
+                video.current_step_log = "[1/5] Metadata YouTube terverifikasi & memulai unduhan..."
                 await session.commit()
 
         # 2. Download (dengan cookie pengguna jika tersedia)
@@ -114,11 +117,12 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
             if usr and usr.cookie_path and os.path.exists(usr.cookie_path):
                 user_cookie_path = usr.cookie_path
 
+        await set_state(status="downloading", progress=15, step_log="[2/5] Mengunduh stream video 1080p & file subtitle...")
         video_path = await download_video(youtube_url, str(video_id), cookie_path=user_cookie_path)
         if not video_path:
             raise Exception("Gagal mengunduh video dari YouTube")
 
-        await set_state(status="subtitling", progress=25)
+        await set_state(status="subtitling", progress=25, step_log="[3/5] Mengurai percakapan subtitle & memindai audio peak volume...")
 
         # 3. Subtitle / transcript & audio peak detection
         sub_path = await extract_subtitles(video_path, download_dir)
@@ -128,7 +132,7 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
         
         audio_peaks = await detect_audio_peaks(video_path)
 
-        await set_state(status="detecting", progress=45)
+        await set_state(status="detecting", progress=45, step_log="[4/5] Menganalisis momen viral via Router LLM (DeepSeek) & Traffic Heatmap...")
 
         # 4. Deteksi highlight — Multi-modal (Text + Traffic Heatmap + Audio Peaks)
         use_ai = (mode == "ai") and bool(NOVITA_API_KEY)
@@ -159,7 +163,11 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
         clip_results = []
         for i, moment in enumerate(moments):
             progress_step = min(90, 60 + int((i / max(1, len(moments))) * 30))
-            await set_state(status="clipping", progress=progress_step)
+            await set_state(
+                status="clipping",
+                progress=progress_step,
+                step_log=f"[5/5] Pemotongan klip {i+1}/{len(moments)}, framing vertikal 9:16, & burn-in subtitle..."
+            )
             
             clip_path = os.path.join(CLIPS_DIR, f"clip_{video_id}_{i}.mp4")
             success = await clip_video(

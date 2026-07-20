@@ -324,6 +324,16 @@ async def get_video(video_id: int, user: User = Depends(get_current_user), db: A
     video = result.scalar_one_or_none()
     if not video:
         raise HTTPException(404, "Video not found")
+
+    # Timeout check: jika status aktif lebih dari 15 menit, tandai failed
+    if video.status in ACTIVE_STATUSES and video.created_at:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc) if video.created_at.tzinfo else datetime.utcnow()
+        if (now - video.created_at).total_seconds() > 900:
+            video.status = "failed"
+            video.error_message = "Proses dibatalkan karena melebihi batas waktu server (timeout 15 menit)."
+            await db.commit()
+
     return {
         "id": video.id,
         "title": video.title,
@@ -331,6 +341,7 @@ async def get_video(video_id: int, user: User = Depends(get_current_user), db: A
         "duration_seconds": video.duration_seconds,
         "status": video.status,
         "progress": video.progress or 0,
+        "current_step_log": getattr(video, "current_step_log", None),
         "error_message": video.error_message,
         "clips": [{
             "id": c.id,
