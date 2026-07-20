@@ -451,13 +451,21 @@ function UsersTab({ colors, isDark }: any) {
 /* ─── Queue Tab ─────────────────────────────────────── */
 function QueueTab({ colors, isDark }: any) {
   const [queue, setQueue] = useState<any[]>([]);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const fetchQueue = useCallback(async (isInitial = false) => {
     if (isInitial) setLoading(true);
     try {
-      const data = await apiGet('/admin/queue');
-      setQueue(data || []);
+      const res = await apiGet('/admin/queue');
+      if (res && Array.isArray(res.items)) {
+        setQueue(res.items);
+        setIsPaused(res.is_paused);
+      } else if (Array.isArray(res)) {
+        setQueue(res);
+      }
     } catch (e: any) {
       console.error(e.message);
     } finally {
@@ -471,18 +479,176 @@ function QueueTab({ colors, isDark }: any) {
     return () => clearInterval(interval);
   }, [fetchQueue]);
 
+  const handleTogglePause = async () => {
+    setActionLoading(true);
+    try {
+      if (isPaused) {
+        const res = await apiPost('/admin/queue/resume');
+        toast.success('Antrean Dilanjutkan ▶️', res.message);
+        setIsPaused(false);
+      } else {
+        const res = await apiPost('/admin/queue/pause');
+        toast.warning('Antrean Di-pause ⏸️', res.message);
+        setIsPaused(true);
+      }
+      fetchQueue(false);
+    } catch (e: any) {
+      toast.error('Gagal Mengubah Status Antrean', e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleClearAllQueue = async () => {
+    const confirm = Platform.OS === 'web'
+      ? window.confirm('Apakah Anda yakin ingin MENGHENTIKAN dan MENGHAPUS SELURUH antrean proses di server?')
+      : true;
+    if (!confirm) return;
+
+    setActionLoading(true);
+    try {
+      const res = await apiDelete('/admin/queue/clear-all');
+      toast.success('Antrean Dibersihkan 🧹', res.message);
+      setSelectedIds([]);
+      fetchQueue(true);
+    } catch (e: any) {
+      toast.error('Gagal Hapus Semua Antrean', e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    const confirm = Platform.OS === 'web'
+      ? window.confirm(`Apakah Anda yakin ingin MENGHAPUS ${selectedIds.length} video terpilih dari antrean?`)
+      : true;
+    if (!confirm) return;
+
+    setActionLoading(true);
+    try {
+      const res = await apiPost('/admin/queue/bulk-delete', { video_ids: selectedIds });
+      toast.success('Video Terpilih Dihapus 🗑️', res.message);
+      setSelectedIds([]);
+      fetchQueue(true);
+    } catch (e: any) {
+      toast.error('Gagal Hapus Video Terpilih', e.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReorder = async (videoId: number, direction: 'up' | 'down' | 'top') => {
+    try {
+      await apiPost('/admin/queue/reorder', { video_id: videoId, direction });
+      toast.success('Prioritas Diperbarui ⚡', `Antrean #${videoId} berhasil dipindahkan (${direction.toUpperCase()}).`);
+      fetchQueue(false);
+    } catch (e: any) {
+      toast.error('Gagal Mengubah Urutan', e.message);
+    }
+  };
+
+  const handleDeleteItem = async (videoId: number, title: string) => {
+    const confirm = Platform.OS === 'web'
+      ? window.confirm(`Apakah Anda yakin ingin menghentikan & menghapus antrean video "${title}"?`)
+      : true;
+    if (!confirm) return;
+
+    try {
+      await apiDelete(`/admin/videos/${videoId}`);
+      toast.success('Video Dihapus 🛑', 'Antrean video berhasil dihentikan & dihapus.');
+      fetchQueue(false);
+    } catch (e: any) {
+      toast.error('Gagal Hapus Antrean', e.message);
+    }
+  };
+
+  const toggleSelectId = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
+  };
+
   if (loading) return <View style={{ padding: 16 }}><SkeletonLoader height={70} /><SkeletonLoader height={70} /></View>;
 
   return (
     <ScrollView style={{ flex: 1, padding: 16 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => fetchQueue(true)} />}>
       <PageContainer maxWidth={880}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <Text style={{ fontWeight: '700', color: colors.text, fontSize: 16 }}>
-            Antrian Proses ({queue.length})
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        {/* Banner Status Pause Global */}
+        {isPaused ? (
+          <View style={{
+            padding: 12, borderRadius: 10, marginBottom: 14,
+            backgroundColor: '#452d0a', borderWidth: 1, borderColor: '#d97706',
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+              <Ionicons name="pause-circle" size={22} color="#f59e0b" />
+              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
+                Antrean Global Sedang DI-PAUSE. Pemrosesan video baru ditahan sementara.
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
+        {/* Action Controls Header */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={{ fontWeight: '700', color: colors.text, fontSize: 16 }}>
+              Antrian Proses ({queue.length})
+            </Text>
             <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={{ fontSize: 11, color: colors.muted }}>Realtime Sync (2s)</Text>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* Pause / Resume Button */}
+            <TouchableOpacity
+              onPress={handleTogglePause}
+              disabled={actionLoading}
+              style={{
+                paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8,
+                backgroundColor: isPaused ? colors.success : '#d97706',
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+              }}
+            >
+              <Ionicons name={isPaused ? "play" : "pause"} size={14} color="#fff" />
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>
+                {isPaused ? 'Lanjutkan Antrean' : 'Pause Antrean'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Bulk Delete Button */}
+            {selectedIds.length > 0 ? (
+              <TouchableOpacity
+                onPress={handleBulkDelete}
+                disabled={actionLoading}
+                style={{
+                  paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8,
+                  backgroundColor: '#dc2626', flexDirection: 'row', alignItems: 'center', gap: 6,
+                }}
+              >
+                <Ionicons name="trash-bin-outline" size={14} color="#fff" />
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>
+                  Hapus Terpilih ({selectedIds.length})
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {/* Clear All Button */}
+            {queue.length > 0 ? (
+              <TouchableOpacity
+                onPress={handleClearAllQueue}
+                disabled={actionLoading}
+                style={{
+                  paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8,
+                  backgroundColor: isDark ? '#3f1818' : '#fee2e2',
+                  borderWidth: 1, borderColor: '#ef4444',
+                  flexDirection: 'row', alignItems: 'center', gap: 4,
+                }}
+              >
+                <Ionicons name="trash" size={13} color="#ef4444" />
+                <Text style={{ color: '#ef4444', fontWeight: '700', fontSize: 12 }}>
+                  Hapus Semua
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
 
@@ -495,18 +661,37 @@ function QueueTab({ colors, isDark }: any) {
         ) : (
           queue.map((v: any) => {
             const progress = typeof v.progress === 'number' ? v.progress : 0;
+            const isSelected = selectedIds.includes(v.id);
+
             return (
-              <View key={v.id} style={{ padding: 14, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 12 }}>
-                {/* Header Row */}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 10 }}>
+              <View key={v.id} style={{
+                padding: 14, borderRadius: 12,
+                backgroundColor: isSelected ? (colors.primary + '15') : colors.card,
+                borderWidth: 1, borderColor: isSelected ? colors.primary : colors.border,
+                marginBottom: 12,
+              }}>
+                {/* Header Row with Checkbox & Reorder Controls */}
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8, gap: 10 }}>
+                  <TouchableOpacity onPress={() => toggleSelectId(v.id)} style={{ marginTop: 2 }}>
+                    <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={20} color={isSelected ? colors.primary : colors.muted} />
+                  </TouchableOpacity>
+
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: '700', color: colors.text, fontSize: 14 }} numberOfLines={1}>
-                      {v.title || `Video #${v.id} (${v.youtube_id || 'File'})`}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontWeight: '700', color: colors.text, fontSize: 14, flex: 1 }} numberOfLines={1}>
+                        {v.title || `Video #${v.id} (${v.youtube_id || 'File'})`}
+                      </Text>
+                      {v.priority > 0 ? (
+                        <View style={{ backgroundColor: '#f59e0b', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                          <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>PRIORITAS +{v.priority}</Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <Text style={{ color: colors.muted, fontSize: 11, marginTop: 2 }}>
                       User: <Text style={{ fontWeight: '600', color: colors.text }}>{v.user_name}</Text> • Masuk {v.queued_for}s lalu
                     </Text>
                   </View>
+
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.primary + '18' }}>
                       <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '700' }}>{progress}%</Text>
@@ -521,11 +706,7 @@ function QueueTab({ colors, isDark }: any) {
                 {v.current_step_log ? (
                   <View style={{
                     backgroundColor: isDark ? '#0f172a' : '#f8fafc',
-                    padding: 8,
-                    borderRadius: 6,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    marginBottom: 10,
+                    padding: 8, borderRadius: 6, borderWidth: 1, borderColor: colors.border, marginBottom: 10,
                   }}>
                     <Text style={{ fontSize: 11, color: colors.text, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }} numberOfLines={2}>
                       ⚙️ {v.current_step_log}
@@ -534,13 +715,34 @@ function QueueTab({ colors, isDark }: any) {
                 ) : null}
 
                 {/* Progress Bar */}
-                <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' }}>
+                <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden', marginBottom: 10 }}>
                   <View style={{
                     height: '100%',
                     width: `${Math.min(100, Math.max(2, progress))}%`,
                     backgroundColor: colors.primary,
                     borderRadius: 3,
                   }} />
+                </View>
+
+                {/* Item Controls Row (Reorder Up/Down/Top & Stop/Delete) */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.border + '60' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '600' }}>Urutan:</Text>
+                    <TouchableOpacity onPress={() => handleReorder(v.id, 'top')} style={{ paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: isDark ? '#332a00' : '#fef3c7', borderWidth: 1, borderColor: '#f59e0b' }}>
+                      <Text style={{ fontSize: 10, color: '#d97706', fontWeight: '700' }}>⭐ Ke Atas</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleReorder(v.id, 'up')} style={{ paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderWidth: 1, borderColor: colors.border }}>
+                      <Text style={{ fontSize: 10, color: colors.text, fontWeight: '600' }}>🔼 Naik</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleReorder(v.id, 'down')} style={{ paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: isDark ? '#1e293b' : '#f1f5f9', borderWidth: 1, borderColor: colors.border }}>
+                      <Text style={{ fontSize: 10, color: colors.text, fontWeight: '600' }}>🔽 Turun</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity onPress={() => handleDeleteItem(v.id, v.title || `Video #${v.id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, backgroundColor: '#fee2e2' }}>
+                    <Ionicons name="stop-circle" size={12} color="#dc2626" />
+                    <Text style={{ fontSize: 10, color: '#dc2626', fontWeight: '700' }}>Hentikan & Hapus</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             );

@@ -928,20 +928,96 @@ async def admin_get_video(video_id: int, admin: User = Depends(require_admin), d
 
 @router.get("/admin/queue")
 async def admin_queue(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    res_setting = await db.execute(select(SystemSetting).where(SystemSetting.key == "queue_paused"))
+    setting = res_setting.scalar_one_or_none()
+    is_paused = (setting.value == "true") if setting else False
+
     result = await db.execute(
         select(Video)
         .where(Video.status.in_(["pending", "downloading", "subtitling", "detecting", "clipping", "tracking", "finalizing"]))
-        .order_by(Video.created_at.asc())
+        .order_by(Video.priority.desc(), Video.created_at.asc())
     )
     queue = result.scalars().all()
-    return [{
+    items = [{
         "id": v.id, "title": v.title, "youtube_id": v.youtube_id, "user_id": v.user_id,
         "user_name": v.user.name if v.user else "N/A", "status": v.status, "duration": v.duration_seconds,
         "progress": v.progress or 0,
+        "priority": getattr(v, "priority", 0) or 0,
         "current_step_log": getattr(v, "current_step_log", None),
         "created_at": v.created_at.isoformat(),
         "queued_for": int((datetime.utcnow() - v.created_at).total_seconds()),
     } for v in queue]
+    return {
+        "is_paused": is_paused,
+        "items": items,
+    }
+
+@router.post("/admin/queue/pause")
+async def admin_pause_queue(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    res_setting = await db.execute(select(SystemSetting).where(SystemSetting.key == "queue_paused"))
+    setting = res_setting.scalar_one_or_none()
+    if not setting:
+        setting = SystemSetting(key="queue_paused", value="true")
+        db.add(setting)
+    else:
+        setting.value = "true"
+    await db.commit()
+    return {"status": "ok", "is_paused": True, "message": "Semua antrean pemrosesan berhasil di-pause."}
+
+@router.post("/admin/queue/resume")
+async def admin_resume_queue(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    res_setting = await db.execute(select(SystemSetting).where(SystemSetting.key == "queue_paused"))
+    setting = res_setting.scalar_one_or_none()
+    if not setting:
+        setting = SystemSetting(key="queue_paused", value="false")
+        db.add(setting)
+    else:
+        setting.value = "false"
+    await db.commit()
+    return {"status": "ok", "is_paused": False, "message": "Antrean pemrosesan kembali dilanjutkan."}
+
+@router.delete("/admin/queue/clear-all")
+async def admin_clear_all_queue(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    from app.services.video_service import delete_video_files_and_db
+    result = await db.execute(
+        select(Video).where(Video.status.in_(["pending", "downloading", "subtitling", "detecting", "clipping", "tracking", "finalizing"]))
+    )
+    videos = result.scalars().all()
+    count = 0
+    for v in videos:
+        if await delete_video_files_and_db(v.id, db):
+            count += 1
+    return {"status": "ok", "message": f"Berhasil menghentikan & menghapus {count} video dari antrean."}
+
+@router.post("/admin/queue/bulk-delete")
+async def admin_bulk_delete_queue(data: dict, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    from app.services.video_service import delete_video_files_and_db
+    video_ids = data.get("video_ids", [])
+    count = 0
+    for vid in video_ids:
+        if await delete_video_files_and_db(vid, db):
+            count += 1
+    return {"status": "ok", "message": f"Berhasil menghentikan & menghapus {count} video terpilih."}
+
+@router.post("/admin/queue/reorder")
+async def admin_reorder_queue(data: dict, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    video_id = data.get("video_id")
+    direction = data.get("direction")
+    res = await db.execute(select(Video).where(Video.id == video_id))
+    video = res.scalar_one_or_none()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video tidak ditemukan")
+    
+    current_prio = getattr(video, "priority", 0) or 0
+    if direction == "top":
+        video.priority = current_prio + 100
+    elif direction == "up":
+        video.priority = current_prio + 10
+    elif direction == "down":
+        video.priority = current_prio - 10
+        
+    await db.commit()
+    return {"status": "ok", "message": "Urutan antrean berhasil diperbarui"}
 
 @router.get("/admin/system")
 async def admin_system(admin: User = Depends(require_admin)):

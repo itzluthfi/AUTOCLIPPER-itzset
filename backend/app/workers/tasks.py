@@ -90,7 +90,7 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                                mode: str = "heuristic", tracking: str = "auto",
                                num_clips: int = 5, sub_lang: str = "id"):
     from sqlalchemy import select
-    from app.models.models import Video, Clip, User, CreditTransaction
+    from app.models.models import Video, Clip, User, CreditTransaction, SystemSetting
     from app.services.video_service import (
         download_video, extract_subtitles, transcribe_audio,
         parse_subtitle_to_text, clip_video, get_video_info, detect_audio_peaks,
@@ -118,6 +118,15 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
             await session.commit()
 
     try:
+        # Loop cek jika antrean sedang di-pause oleh Admin
+        while True:
+            async with session_factory() as session:
+                res_setting = await session.execute(select(SystemSetting).where(SystemSetting.key == "queue_paused"))
+                setting = res_setting.scalar_one_or_none()
+                if not setting or setting.value != "true":
+                    break
+                await set_state(status="pending", progress=2, step_log="⏸️ Antrean sedang di-pause oleh Admin. Menunggu giliran dilanjutkan...")
+            await asyncio.sleep(3)
         # 0. Ambil cookie pengguna lebih dulu (dipakai untuk metadata & download —
         # video privat/age-restricted butuh cookie sejak pengambilan info juga).
         user_cookie_path = None
