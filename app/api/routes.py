@@ -168,7 +168,41 @@ async def google_callback(code: str, state: str = None, db: AsyncSession = Depen
         token_data = resp.json()
     if "error" in token_data:
         raise HTTPException(400, token_data.get("error_description", "OAuth failed"))
-    return {"status": "ok", "tokens": token_data}
+    
+    # Ambil user info dari Google
+    access_token = token_data.get("access_token")
+    async with httpx.AsyncClient() as client:
+        user_info_resp = await client.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        user_info = user_info_resp.json()
+    
+    email = user_info.get("email")
+    name = user_info.get("name", "Google User")
+    if not email:
+        raise HTTPException(400, "Gagal mendapatkan email dari Google")
+    
+    res = await db.execute(select(User).where(User.email == email))
+    user = res.scalar_one_or_none()
+    
+    api_key_raw = generate_api_key()
+    if not user:
+        user = User(
+            email=email,
+            name=name,
+            role="user",
+            api_key=hash_api_key(api_key_raw),
+            credits=5
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    else:
+        user.api_key = hash_api_key(api_key_raw)
+        await db.commit()
+    
+    return RedirectResponse(f"{FRONTEND_URL}/?api_key={api_key_raw}")
 
 # ─── Video Endpoints ─────────────────────────────────────────
 
@@ -1022,7 +1056,7 @@ async def google_app_login():
     client_id = GOOGLE_CLIENT_ID
     if not client_id:
         raise HTTPException(500, "Google Client ID belum diatur")
-    redirect_uri = f"{APP_URL}/api/auth/google/app/callback"
+    redirect_uri = GOOGLE_REDIRECT_URI or f"{APP_URL}/api/auth/google/callback"
     state = generate_oauth_state()
 
     url = (
@@ -1045,7 +1079,7 @@ async def google_app_callback(code: str, state: str = None, db: AsyncSession = D
         raise HTTPException(400, "State OAuth tidak valid atau kedaluwarsa")
     client_id = GOOGLE_CLIENT_ID
     client_secret = GOOGLE_CLIENT_SECRET
-    redirect_uri = f"{APP_URL}/api/auth/google/app/callback"
+    redirect_uri = GOOGLE_REDIRECT_URI or f"{APP_URL}/api/auth/google/callback"
     
     async with httpx.AsyncClient() as client:
         resp = await client.post("https://oauth2.googleapis.com/token", data={
