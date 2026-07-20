@@ -5,6 +5,7 @@ import { Header } from '../components/Header';
 import { ProgressBar } from '../components/ProgressBar';
 import { getVideo } from '../services/api';
 import { Ionicons } from '@expo/vector-icons';
+import { PageContainer } from '../components/PageContainer';
 
 interface ProcessingStep {
   key: string;
@@ -22,16 +23,35 @@ const STEPS: ProcessingStep[] = [
 ];
 
 const STATUS_MAP: Record<string, { progress: number; step: string }> = {
-  'pending': { progress: 10, step: '⏳ [1/5] Memulai antrean pemrosesan...' },
-  'downloading': { progress: 25, step: '📥 [2/5] Mengunduh video YouTube & subtitle...' },
-  'subtitling': { progress: 40, step: '📝 [3/5] Transkripsi suara & ekstrak subtitle...' },
-  'detecting': { progress: 60, step: '🧠 [4/5] Menganalisis momen paling viral...' },
-  'clipping': { progress: 80, step: '✂️ [5/5] Pemotongan klip & framing 9:16...' },
-  'tracking': { progress: 90, step: '🎯 Dynamic Face & Speaker Tracking...' },
-  'finalizing': { progress: 95, step: '✨ Menyelesaikan klip & render thumbnail...' },
-  'completed': { progress: 100, step: '🎉 Pemrosesan Selesai!' },
-  'failed': { progress: 0, step: '❌ Pemrosesan Gagal' },
+  'pending': { progress: 10, step: '[1/5] Memulai antrean pemrosesan...' },
+  'downloading': { progress: 25, step: '[2/5] Mengunduh video YouTube & subtitle...' },
+  'subtitling': { progress: 40, step: '[3/5] Transkripsi suara & ekstrak subtitle...' },
+  'detecting': { progress: 60, step: '[4/5] Menganalisis momen paling viral...' },
+  'clipping': { progress: 80, step: '[5/5] Pemotongan klip & framing 9:16...' },
+  'tracking': { progress: 90, step: 'Dynamic Face & Speaker Tracking...' },
+  'finalizing': { progress: 95, step: 'Menyelesaikan klip & render thumbnail...' },
+  'completed': { progress: 100, step: 'Pemrosesan Selesai!' },
+  'failed': { progress: 0, step: 'Pemrosesan Gagal' },
 };
+
+function PulsingIcon({ color }: { color: string }) {
+  const pulse = React.useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, []);
+  return (
+    <Animated.View style={{ opacity: pulse, marginTop: 1 }}>
+      <Ionicons name="time" size={18} color={color} />
+    </Animated.View>
+  );
+}
 
 export default function ProcessingScreen({ route, navigation }: any) {
   const { videoId } = route.params;
@@ -111,6 +131,7 @@ export default function ProcessingScreen({ route, navigation }: any) {
       <Header title="Status Pemrosesan" />
 
       <ScrollView contentContainerStyle={{ padding: 20, flexGrow: 1, justifyContent: 'center' }}>
+        <PageContainer maxWidth={560}>
         <Animated.View style={{
           opacity: fadeAnim,
           transform: [{ translateY: slideAnim }],
@@ -168,7 +189,7 @@ export default function ProcessingScreen({ route, navigation }: any) {
                 >
                   <Ionicons name={showErrorLog ? 'chevron-up' : 'chevron-down'} size={14} color={colors.muted} />
                   <Text style={{ color: colors.muted, fontSize: 12, fontWeight: '500' }}>
-                    {showErrorLog ? 'Sembunyikan Rincian Log Error' : '🔍 Lihat Rincian Log Error'}
+                    {showErrorLog ? 'Sembunyikan Rincian Log Error' : 'Lihat Rincian Log Error'}
                   </Text>
                 </TouchableOpacity>
 
@@ -205,9 +226,12 @@ export default function ProcessingScreen({ route, navigation }: any) {
 
                 {/* ─── LIVE THINKING STEP TIMELINE ─── */}
                 <View style={{ marginTop: 24, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
-                  <Text style={{ fontWeight: '600', color: colors.text, fontSize: 13, marginBottom: 12 }}>
-                    📋 Rincian Tahapan Pemrosesan (Live Log):
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                    <Ionicons name="list-outline" size={15} color={colors.text} />
+                    <Text style={{ fontWeight: '600', color: colors.text, fontSize: 13 }}>
+                      Rincian Tahapan Pemrosesan (Live Log)
+                    </Text>
+                  </View>
 
                   {STEPS.map((s, idx) => {
                     const isDone = currentProgress > s.minProgress;
@@ -218,7 +242,7 @@ export default function ProcessingScreen({ route, navigation }: any) {
                         {isDone ? (
                           <Ionicons name="checkmark-circle" size={18} color={colors.success} style={{ marginTop: 1 }} />
                         ) : isCurrent ? (
-                          <Ionicons name="time" size={18} color={colors.primary} style={{ marginTop: 1 }} />
+                          <PulsingIcon color={colors.primary} />
                         ) : (
                           <Ionicons name="ellipse-outline" size={18} color={colors.muted} style={{ marginTop: 1 }} />
                         )}
@@ -241,6 +265,7 @@ export default function ProcessingScreen({ route, navigation }: any) {
             )}
           </View>
         </Animated.View>
+        </PageContainer>
       </ScrollView>
     </View>
   );

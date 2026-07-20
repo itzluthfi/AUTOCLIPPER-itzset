@@ -162,6 +162,18 @@ export async function getPublicSettings(): Promise<{ payment_enabled: boolean; m
   return resp.json();
 }
 
+export interface PublicStats {
+  clips_created: number;
+  videos_processed: number;
+  creators: number;
+}
+
+export async function getPublicStats(): Promise<PublicStats> {
+  const resp = await fetch(`${API_BASE}/stats/public`);
+  if (!resp.ok) throw new Error('Gagal memuat statistik publik');
+  return resp.json();
+}
+
 export async function createCheckout(packageId: string): Promise<{ order_id: string; token: string; redirect_url: string }> {
   return request('/payments/checkout', {
     method: 'POST',

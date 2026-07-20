@@ -199,6 +199,8 @@ async def detect_audio_peaks(video_path: str) -> list[dict]:
         return peaks[:5]
     except Exception as e:
         logger.error(f"Error detecting audio peaks: {e}")
+        return []
+
 def generate_tts_audio(text: str, output_path: str, lang: str = "id") -> bool:
     """Buat file audio MP3 dari teks judul hook menggunakan gTTS"""
     try:
@@ -303,57 +305,97 @@ async def clip_video(
     if tracking in ["auto", "mix"]:
         effective_tracking = analyze_clip_framing(video_path, start, end)
 
-    # Buat audio TTS Voiceover jika title disediakan
+    # Buat audio TTS Voiceover hook jika title disediakan
     tts_audio_path = None
     if title:
-        tts_audio_path = os.path.join(os.path.dirname(output_path), f"tts_{os.path.basename(output_path)}.mp3")
-        generate_tts_audio(title, tts_audio_path, lang=sub_lang)
+        candidate_tts_path = os.path.join(os.path.dirname(output_path), f"tts_{os.path.basename(output_path)}.mp3")
+        if generate_tts_audio(title, candidate_tts_path, lang=sub_lang):
+            tts_audio_path = candidate_tts_path
 
-    # Menentukan rantai filter video berdasarkan mode tracking efektif
-    if effective_tracking == "speaker":
+    burn_subs = bool(add_subtitle and subtitle_path and os.path.exists(subtitle_path))
+    has_voiceover = bool(tts_audio_path)
+    is_speaker_split = effective_tracking == "speaker"
+    # filter_complex wajib dipakai jika: split-screen (butuh crop dual-input),
+    # atau ada voiceover (butuh mixing graph audio) — di luar itu -vf tunggal cukup & lebih murah.
+    filter_complex = is_speaker_split or has_voiceover
+
+    # ── Rantai filter video: dibangun sebagai daftar label bersambung, bukan string-replace,
+    # supaya setiap tahap (crop → subtitle → title) selalu ke-chain walau tahap sebelumnya dilewati.
+    video_chain: list[str] = []
+    if is_speaker_split:
         # Split-Screen Mode: Membagi video landscape menjadi 2 panel atas-bawah (9:16 stacked)
-        vf_filter = (
-            "[0:v]crop=iw/2:ih:0:0,scale=1080:960[top];"
-            "[0:v]crop=iw/2:ih:iw/2:0,scale=1080:960[bottom];"
-            "[top][bottom]vstack=inputs=2[v]"
+        video_chain.append(
+            "[0:v]crop=iw/2:ih:0:0,scale=1080:960[vtop];"
+            "[0:v]crop=iw/2:ih:iw/2:0,scale=1080:960[vbot];"
+            "[vtop][vbot]vstack=inputs=2[v0]"
         )
-        filter_complex = True
+        current_label = "v0"
     else:
-        # Standard Single Focus (Center / Face Crop 9:16)
-        filters = ["crop=ih*9/16:ih", "scale=1080:1920"]
-        filter_complex = False
+        simple_filters = ["crop=ih*9/16:ih", "scale=1080:1920"]
 
-    if add_subtitle and subtitle_path and os.path.exists(subtitle_path):
+    stage = 0
+
+    def _chain_filter(filter_str: str):
+        nonlocal stage, current_label
+        stage += 1
+        next_label = f"v{stage}"
+        video_chain.append(f"[{current_label}]{filter_str}[{next_label}]")
+        current_label = next_label
+
+    if burn_subs:
         escaped = subtitle_path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
         sub_style = ":force_style='FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2'"
         sub_filter = f"subtitles='{escaped}'{sub_style}"
-        if filter_complex:
-            vf_filter += f";[v]{sub_filter}[outv]"
+        if is_speaker_split:
+            _chain_filter(sub_filter)
         else:
-            filters.append(sub_filter)
+            simple_filters.append(sub_filter)
 
-    # Tambahkan Title Card Overlay di awal video (3 detik pertama) jika judul ada
     if title:
         safe_title = title.replace("'", "").replace(":", " ").replace("\\", "")[:45]
         title_overlay = f"drawtext=text='{safe_title}':x=(w-text_w)/2:y=h*0.12:fontsize=42:fontcolor=yellow:box=1:boxcolor=black@0.7:boxborderw=10:enable='between(t,0,3)'"
-        if filter_complex:
-            vf_filter = vf_filter.replace("[outv]", f"[vsub];[vsub]{title_overlay}[outv]")
+        if is_speaker_split:
+            _chain_filter(title_overlay)
         else:
-            filters.append(title_overlay)
+            simple_filters.append(title_overlay)
 
-    burn_subs = add_subtitle and subtitle_path and os.path.exists(subtitle_path)
+    if is_speaker_split:
+        video_out_label = current_label
+    elif filter_complex:
+        # Non-split tapi butuh filter_complex karena ada voiceover: bungkus filter -vf biasa
+        # jadi satu node filter_complex bernama [v0] supaya bisa dipetakan bareng audio mix.
+        video_chain.append(f"[0:v]{','.join(simple_filters)}[v0]")
+        video_out_label = "v0"
+
+    # ── Rantai filter audio: mixing voiceover hook (3 detik pertama) dengan audio asli.
+    audio_chain: list[str] = []
+    audio_out_label = None
+    if has_voiceover:
+        # Input audio asli sedikit diredam selama hook, voiceover terdengar jelas di depan.
+        audio_chain.append("[0:a]volume=0.55:enable='between(t,0,3)',volume=1.0:enable='gte(t,3)'[aorig]")
+        audio_chain.append("[1:a]volume=1.6,apad[avoice]")
+        audio_chain.append("[aorig][avoice]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]")
+        audio_out_label = "aout"
+
     if burn_subs:
         seek_args = ["-i", video_path, "-ss", str(start)]
     else:
         seek_args = ["-ss", str(start), "-i", video_path]
 
-    cmd = [get_ffmpeg_cmd(), *seek_args, "-t", str(min(duration, 60))]
+    cmd = [get_ffmpeg_cmd(), *seek_args]
+    if has_voiceover:
+        cmd.extend(["-i", tts_audio_path])
+    cmd.extend(["-t", str(min(duration, 60))])
 
     if filter_complex:
-        out_map = "[outv]" if burn_subs else "[v]"
-        cmd.extend(["-filter_complex", vf_filter, "-map", out_map, "-map", "0:a?"])
+        full_graph = ";".join(video_chain + audio_chain)
+        cmd.extend(["-filter_complex", full_graph, "-map", f"[{video_out_label}]"])
+        if audio_out_label:
+            cmd.extend(["-map", f"[{audio_out_label}]"])
+        else:
+            cmd.extend(["-map", "0:a?"])
     else:
-        cmd.extend(["-vf", ",".join(filters)])
+        cmd.extend(["-vf", ",".join(simple_filters)])
 
     # High Quality Render Parameters (-crf 19 untuk 1080p jernih, audio 192k)
     cmd.extend([
@@ -362,11 +404,17 @@ async def clip_video(
         "-crf", "19",
         "-c:a", "aac",
         "-b:a", "192k",
+        "-shortest",
         "-y", output_path
     ])
 
     try:
         returncode, stdout, stderr = await asyncio.to_thread(_run_cmd_sync, cmd)
+        if tts_audio_path and os.path.exists(tts_audio_path):
+            try:
+                os.remove(tts_audio_path)
+            except OSError:
+                pass
         if returncode != 0:
             logger.error(f"ffmpeg failed: {stderr.decode(errors='ignore')}")
             return False

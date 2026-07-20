@@ -3,6 +3,10 @@ import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, Platform, 
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
+import { FadeInView } from '../components/FadeInView';
+import { LiftCard } from '../components/LiftCard';
+import { PageContainer } from '../components/PageContainer';
+import { Badge } from '../components/Badge';
 import { getVideo, uploadClip, getApiKey, API_BASE } from '../services/api';
 
 export default function ResultsScreen({ route, navigation }: any) {
@@ -62,7 +66,7 @@ export default function ResultsScreen({ route, navigation }: any) {
     try {
       const res = await uploadClip(clip.id);
       Alert.alert(
-        '✅ Upload Berhasil!',
+        'Upload Berhasil',
         `Klip Shorts berhasil diunggah ke YouTube Shorts!\n\n${res.url}`,
         [
           { text: 'Buka di YouTube', onPress: () => Linking.openURL(res.url) },
@@ -72,7 +76,7 @@ export default function ResultsScreen({ route, navigation }: any) {
       loadVideo();
     } catch (e: any) {
       Alert.alert(
-        '❌ Gagal Upload',
+        'Gagal Upload',
         e.message || 'Gagal mengunggah klip. Pastikan akun YouTube sudah terhubung melalui Login Google di Profil.'
       );
     } finally {
@@ -84,7 +88,8 @@ export default function ResultsScreen({ route, navigation }: any) {
     const isReady = clip.status === 'ready' || clip.status === 'completed';
 
     return (
-      <View key={clip.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <FadeInView key={clip.id} delay={Math.min(index, 6) * 50}>
+      <LiftCard style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={{ flexDirection: 'row', gap: 12 }}>
           {/* Thumbnail preview */}
           {isReady && apiKey ? (
@@ -110,15 +115,21 @@ export default function ResultsScreen({ route, navigation }: any) {
               {clip.title || `Klip #${index + 1}`}
             </Text>
 
-            <Text style={{ color: colors.muted, fontSize: 12, marginBottom: 4 }}>
-              ⏱️ {Math.floor(clip.start / 60)}:{(clip.start % 60).toString().padStart(2, '0')} - {Math.floor(clip.end / 60)}:{(clip.end % 60).toString().padStart(2, '0')}
-              {' • '}{clip.method === 'ai' ? '✨ AI' : '⚡ Heuristic'}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6, flexWrap: 'wrap' }}>
+              <Ionicons name="time-outline" size={12} color={colors.muted} />
+              <Text style={{ color: colors.muted, fontSize: 12 }}>
+                {Math.floor(clip.start / 60)}:{(clip.start % 60).toString().padStart(2, '0')} - {Math.floor(clip.end / 60)}:{(clip.end % 60).toString().padStart(2, '0')}
+              </Text>
+              <Badge label={clip.method === 'ai' ? 'AI' : 'Heuristic'} icon={clip.method === 'ai' ? 'sparkles' : 'flash'} color={clip.method === 'ai' ? '#8b5cf6' : colors.muted} />
+            </View>
 
             {clip.tracking ? (
-              <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '500', marginBottom: 4 }}>
-                🎯 {clip.tracking === 'face' ? 'Face Tracking' : clip.tracking === 'speaker' ? 'Speaker Tracking' : 'Center Crop'}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                <Ionicons name="locate-outline" size={12} color={colors.primary} />
+                <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '500' }}>
+                  {clip.tracking === 'face' ? 'Face Tracking' : clip.tracking === 'speaker' ? 'Speaker Tracking' : clip.tracking === 'auto' ? 'Auto Mix Framing' : 'Center Crop'}
+                </Text>
+              </View>
             ) : null}
 
             {clip.reason ? (
@@ -184,20 +195,24 @@ export default function ResultsScreen({ route, navigation }: any) {
               </TouchableOpacity>
             </>
           ) : clip.status === 'processing' || clip.status === 'clipping' ? (
-            <View style={[styles.statusBanner, { backgroundColor: colors.warning + '20', borderColor: colors.warning }]}>
-              <Text style={{ color: colors.warning, fontWeight: '600', fontSize: 13 }}>⏳ Sedang Memproses Klip...</Text>
+            <View style={[styles.statusBanner, { backgroundColor: colors.warning + '20', borderColor: colors.warning, flexDirection: 'row', gap: 6 }]}>
+              <Ionicons name="sync-outline" size={14} color={colors.warning} />
+              <Text style={{ color: colors.warning, fontWeight: '600', fontSize: 13 }}>Sedang Memproses Klip...</Text>
             </View>
           ) : clip.status === 'failed' ? (
-            <View style={[styles.statusBanner, { backgroundColor: colors.error + '20', borderColor: colors.error }]}>
-              <Text style={{ color: colors.error, fontWeight: '600', fontSize: 13 }}>❌ Gagal Memproses Klip</Text>
+            <View style={[styles.statusBanner, { backgroundColor: colors.error + '20', borderColor: colors.error, flexDirection: 'row', gap: 6 }]}>
+              <Ionicons name="alert-circle-outline" size={14} color={colors.error} />
+              <Text style={{ color: colors.error, fontWeight: '600', fontSize: 13 }}>Gagal Memproses Klip</Text>
             </View>
           ) : (
-            <View style={[styles.statusBanner, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={{ color: colors.muted, fontWeight: '600', fontSize: 13 }}>🕒 Dalam Antrean...</Text>
+            <View style={[styles.statusBanner, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: 'row', gap: 6 }]}>
+              <Ionicons name="time-outline" size={14} color={colors.muted} />
+              <Text style={{ color: colors.muted, fontWeight: '600', fontSize: 13 }}>Dalam Antrean...</Text>
             </View>
           )}
         </View>
-      </View>
+      </LiftCard>
+      </FadeInView>
     );
   };
 
@@ -235,27 +250,36 @@ export default function ResultsScreen({ route, navigation }: any) {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Header showBack title="Hasil Klip Video" />
 
-      <ScrollView style={{ flex: 1, padding: 16 }}>
-        <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
-          {video?.title || 'Hasil Klip Video'}
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <Text style={{ color: colors.muted, fontSize: 13 }}>
-            🎉 {video?.clips?.length || 0} klip berhasil dihasilkan
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
+        <PageContainer maxWidth={860}>
+        <FadeInView>
+          <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
+            {video?.title || 'Hasil Klip Video'}
           </Text>
-          {route.params?.elapsedSeconds ? (
-            <View style={{
-              backgroundColor: colors.success + '20', paddingVertical: 2, paddingHorizontal: 8,
-              borderRadius: 6, borderWidth: 1, borderColor: colors.success + '50',
-            }}>
-              <Text style={{ color: colors.success, fontSize: 11, fontWeight: '600' }}>
-                ⏱️ Diproses dalam {Math.floor(route.params.elapsedSeconds / 60)}m {route.params.elapsedSeconds % 60}s
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons name="checkmark-done-circle" size={14} color={colors.success} />
+              <Text style={{ color: colors.muted, fontSize: 13 }}>
+                {video?.clips?.length || 0} klip berhasil dihasilkan
               </Text>
             </View>
-          ) : null}
-        </View>
+            {route.params?.elapsedSeconds ? (
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 4,
+                backgroundColor: colors.success + '20', paddingVertical: 2, paddingHorizontal: 8,
+                borderRadius: 6, borderWidth: 1, borderColor: colors.success + '50',
+              }}>
+                <Ionicons name="stopwatch-outline" size={12} color={colors.success} />
+                <Text style={{ color: colors.success, fontSize: 11, fontWeight: '600' }}>
+                  Diproses dalam {Math.floor(route.params.elapsedSeconds / 60)}m {route.params.elapsedSeconds % 60}s
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </FadeInView>
 
         {video?.clips?.map((clip: any, index: number) => renderClip(clip, index))}
+        </PageContainer>
       </ScrollView>
 
       {/* Video Player Modal Overlay */}

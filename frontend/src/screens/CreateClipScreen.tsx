@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, Alert, Image, useWindowDimensions } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { submitVideo, checkCookieStatus, autoPresetVideo, getUser, loadApiKey, API_BASE } from '../services/api';
+import { PageContainer } from '../components/PageContainer';
+import { Button } from '../components/Button';
+import { LiftCard } from '../components/LiftCard';
 
 function extractYouTubeId(text: string): string | null {
   if (!text) return null;
@@ -14,6 +17,8 @@ function extractYouTubeId(text: string): string | null {
 
 export default function CreateClipScreen({ navigation }: any) {
   const { colors, isDark } = useTheme();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 640;
   const [url, setUrl] = useState('');
   const [mode, setMode] = useState<'heuristic' | 'ai'>('heuristic');
   const [tracking, setTracking] = useState<'auto' | 'center' | 'face' | 'speaker'>('auto');
@@ -121,6 +126,7 @@ export default function CreateClipScreen({ navigation }: any) {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.background }}>
+      <PageContainer maxWidth={760}>
       <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }], padding: 20 }}>
 
         {/* Header */}
@@ -148,19 +154,12 @@ export default function CreateClipScreen({ navigation }: any) {
               Anda harus upload cookie YouTube terlebih dahulu sebelum bisa menggunakan fitur clip.
               Cookie ini digunakan sebagai autentikasi ke YouTube.
             </Text>
-            <TouchableOpacity
+            <Button
+              label="Setup Cookie YouTube di Profil"
+              icon="key-outline"
+              size="md"
               onPress={() => navigation.navigate('Profile')}
-              style={{
-                paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8,
-                backgroundColor: colors.primary, alignSelf: 'flex-start',
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-              }}
-            >
-              <Ionicons name="key-outline" size={16} color="#fff" />
-              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>
-                ⚡ Setup Cookie YouTube di Profil (.txt / Paste)
-              </Text>
-            </TouchableOpacity>
+            />
           </View>
         )}
 
@@ -255,14 +254,15 @@ export default function CreateClipScreen({ navigation }: any) {
           >
             <Ionicons name="hardware-chip-outline" size={16} color={colors.primary} />
             <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 13 }}>
-              {autoDetecting ? '🤖 Membaca Metadata Video...' : '🤖 Deteksi Otomatis LLM (Rekomendasi Mode)'}
+              {autoDetecting ? 'Membaca Metadata Video...' : 'Deteksi Otomatis LLM (Rekomendasi Mode)'}
             </Text>
           </TouchableOpacity>
 
           {autoReason ? (
-            <View style={{ marginTop: 8, padding: 10, borderRadius: 8, backgroundColor: colors.primary + '15' }}>
-              <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '500' }}>
-                💡 {autoReason}
+            <View style={{ marginTop: 8, padding: 10, borderRadius: 8, backgroundColor: colors.primary + '15', flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+              <Ionicons name="bulb-outline" size={14} color={colors.primary} style={{ marginTop: 1 }} />
+              <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '500', flex: 1 }}>
+                {autoReason}
               </Text>
             </View>
           ) : null}
@@ -305,14 +305,14 @@ export default function CreateClipScreen({ navigation }: any) {
         }}>
           {[
             { key: 'heuristic' as const, label: 'Heuristic', icon: 'flash', desc: 'Cepat, gratis' },
-            { key: 'ai' as const, label: 'AI Router', icon: 'sparkles', desc: userRole === 'free' ? '🔒 Khusus Paid' : 'Akurat, 1 credit' },
+            { key: 'ai' as const, label: 'AI Router', icon: (userRole === 'free' ? 'lock-closed' : 'sparkles'), desc: userRole === 'free' ? 'Khusus Paid' : 'Akurat, 1 credit' },
           ].map(m => (
             <TouchableOpacity
               key={m.key}
               onPress={() => {
                 if (m.key === 'ai' && userRole === 'free') {
                   Alert.alert(
-                    '🔒 Khusus Akun Paid',
+                    'Khusus Akun Paid',
                     'Mode AI Router hanya tersedia untuk akun Paid / Premium. Silakan upgrade paket Anda atau gunakan Mode Heuristik (Gratis).'
                   );
                   return;
@@ -339,7 +339,7 @@ export default function CreateClipScreen({ navigation }: any) {
 
         {/* Subtitle Language Selector */}
         <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
-          🌐 Bahasa Subtitle Video
+          Bahasa Subtitle Video
         </Text>
         <View style={{
           flexDirection: 'row', gap: 8, marginBottom: 16,
@@ -371,7 +371,7 @@ export default function CreateClipScreen({ navigation }: any) {
 
         {/* Framing & Tracking Selector */}
         <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 8, fontSize: 14 }}>
-          🎬 Mode Framing & Tracking Wajah
+          Mode Framing & Tracking Wajah
         </Text>
         <View style={{
           flexDirection: 'row', gap: 8, marginBottom: 20,
@@ -379,7 +379,7 @@ export default function CreateClipScreen({ navigation }: any) {
           backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
         }}>
           {[
-            { key: 'auto' as const, label: '🤖 Auto Mix', icon: 'sparkles', desc: 'Dinamis per Klip' },
+            { key: 'auto' as const, label: 'Auto Mix', icon: 'sparkles', desc: 'Dinamis per Klip' },
             { key: 'face' as const, label: 'Face Track', icon: 'person-outline', desc: 'Lacak Wajah' },
             { key: 'speaker' as const, label: 'Split Screen', icon: 'grid-outline', desc: 'Podcast 2 Orang' },
             { key: 'center' as const, label: 'Center', icon: 'square-outline', desc: 'Tengah' },
@@ -403,22 +403,16 @@ export default function CreateClipScreen({ navigation }: any) {
         </View>
 
         {/* Submit Button */}
-        <TouchableOpacity
+        <Button
+          label={loading ? 'Memproses Video...' : 'Buat Short Clip Sekarang'}
+          icon="rocket-outline"
+          loading={loading}
+          fullWidth
           onPress={handleSubmit}
-          disabled={loading}
-          style={{
-            backgroundColor: loading ? colors.muted : colors.primary,
-            padding: 16, borderRadius: 12, alignItems: 'center',
-            shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
-          }}
-        >
-          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
-            {loading ? 'Memproses Video...' : '🚀 Buat Short Clip Sekarang'}
-          </Text>
-        </TouchableOpacity>
+        />
 
       </Animated.View>
+      </PageContainer>
     </ScrollView>
   );
 }

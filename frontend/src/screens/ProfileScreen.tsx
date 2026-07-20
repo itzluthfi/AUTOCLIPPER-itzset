@@ -3,6 +3,10 @@ import { View, Text, TouchableOpacity, ScrollView, TextInput, ActivityIndicator,
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
+import { PageContainer } from '../components/PageContainer';
+import { LiftCard } from '../components/LiftCard';
+import { Button } from '../components/Button';
+import { FadeInView } from '../components/FadeInView';
 import { getCredits, getUser, logout, getPublicSettings, checkCookieStatus, uploadCookie, pasteCookieText, testCookie } from '../services/api';
 
 export default function ProfileScreen({ navigation }: any) {
@@ -29,11 +33,7 @@ export default function ProfileScreen({ navigation }: any) {
     setTestingCookie(true);
     try {
       const res = await testCookie();
-      if (res.valid) {
-        alert('✅ ' + res.message);
-      } else {
-        alert('❌ ' + res.message);
-      }
+      alert(res.message);
     } catch (e: any) {
       alert(e.message || 'Gagal menguji cookie');
     }
@@ -89,9 +89,11 @@ export default function ProfileScreen({ navigation }: any) {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Header showBack title="Profil" />
-      <ScrollView contentContainerStyle={{ padding: 16, flexGrow: 1 }}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+      <PageContainer maxWidth={640} style={{ padding: 16 }}>
         {/* User Info */}
-        <View style={{ padding: 20, borderRadius: 16, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 16, alignItems: 'center' }}>
+        <FadeInView>
+        <LiftCard style={{ padding: 20, borderRadius: 16, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 16, alignItems: 'center' }}>
           <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.primary + '30', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
             <Ionicons name="person" size={32} color={colors.primary} />
           </View>
@@ -101,19 +103,16 @@ export default function ProfileScreen({ navigation }: any) {
             <Text style={{ color: colors.primary, fontWeight: '600' }}>{credits} Kredit tersisa</Text>
           </View>
           {payEnabled && (
-            <TouchableOpacity
+            <Button
+              label="Beli Kredit (Top-up)"
+              icon="add-circle"
+              size="md"
+              style={{ marginTop: 14 }}
               onPress={() => navigation.navigate('Checkout')}
-              style={{
-                marginTop: 14, flexDirection: 'row', alignItems: 'center',
-                backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 10,
-                borderRadius: 10, gap: 6,
-              }}
-            >
-              <Ionicons name="add-circle" size={18} color="#fff" />
-              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>Beli Kredit (Top-up)</Text>
-            </TouchableOpacity>
+            />
           )}
-        </View>
+        </LiftCard>
+        </FadeInView>
 
         {/* Theme */}
         <View style={{ padding: 16, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 16 }}>
@@ -157,7 +156,7 @@ export default function ProfileScreen({ navigation }: any) {
                   }}
                 >
                   <Text style={{ color: hasCookie ? colors.success : colors.warning, fontSize: 11, fontWeight: '600' }}>
-                    {hasCookie ? '🟢 Terhubung (Atur)' : '⚡ Setup Cookie'}
+                    {hasCookie ? 'Terhubung (Atur)' : 'Setup Cookie'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -190,7 +189,7 @@ export default function ProfileScreen({ navigation }: any) {
                         adjustsFontSizeToFit
                         style={{ color: cookieMode === 'upload' ? '#fff' : colors.text, fontSize: 12, fontWeight: '600', textAlign: 'center' }}
                       >
-                        📁 Upload File
+                        Upload File
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -205,7 +204,7 @@ export default function ProfileScreen({ navigation }: any) {
                         adjustsFontSizeToFit
                         style={{ color: cookieMode === 'paste' ? '#fff' : colors.text, fontSize: 12, fontWeight: '600', textAlign: 'center' }}
                       >
-                        📋 Paste Cookie
+                        Paste Cookie
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -275,7 +274,7 @@ export default function ProfileScreen({ navigation }: any) {
                       {testingCookie && <ActivityIndicator color={colors.text} size="small" />}
                       <Ionicons name="flask-outline" size={16} color={colors.text} />
                       <Text style={{ color: colors.text, fontWeight: '600', fontSize: 12 }}>
-                        🧪 Uji Validitas Cookie (Test YouTube Access)
+                        Uji Validitas Cookie (Test YouTube Access)
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -283,68 +282,66 @@ export default function ProfileScreen({ navigation }: any) {
               )}
             </View>
 
-            {/* TikTok */}
+            {/* TikTok — belum diintegrasikan di backend web, jangan tampilkan status palsu */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Ionicons name="logo-tiktok" size={20} color={colors.text} />
                 <View>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>TikTok Uploads</Text>
-                  <Text style={{ fontSize: 11, color: colors.muted }}>TikTok OAuth Sandbox</Text>
+                  <Text style={{ fontSize: 11, color: colors.muted }}>Auto-upload ke TikTok</Text>
                 </View>
               </View>
-              <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.success + '20' }}>
-                <Text style={{ color: colors.success, fontSize: 11, fontWeight: '600' }}>
-                  🟢 Terhubung
-                </Text>
+              <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.muted + '20' }}>
+                <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '600' }}>Segera Hadir</Text>
               </View>
             </View>
 
-            {/* Instagram */}
+            {/* Instagram — belum diintegrasikan di backend web */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Ionicons name="logo-instagram" size={20} color="#e1306c" />
                 <View>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>Instagram Reels</Text>
-                  <Text style={{ fontSize: 11, color: colors.muted }}>Meta Graph API</Text>
+                  <Text style={{ fontSize: 11, color: colors.muted }}>Auto-upload ke Reels</Text>
                 </View>
               </View>
-              <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.success + '20' }}>
-                <Text style={{ color: colors.success, fontSize: 11, fontWeight: '600' }}>
-                  🟢 Terhubung
-                </Text>
+              <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.muted + '20' }}>
+                <Text style={{ color: colors.muted, fontSize: 11, fontWeight: '600' }}>Segera Hadir</Text>
               </View>
             </View>
           </View>
         </View>
         {user?.role === 'admin' && (
-          <TouchableOpacity onPress={() => navigation.navigate('Admin')}
-            style={{ padding: 16, borderRadius: 12, backgroundColor: colors.warning + '20', borderWidth: 1, borderColor: colors.warning + '40', marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ color: colors.warning, fontWeight: '600' }}>Panel Admin</Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.warning} />
+          <TouchableOpacity onPress={() => navigation.navigate('Admin')}>
+            <LiftCard style={{ padding: 16, borderRadius: 12, backgroundColor: colors.warning + '20', borderWidth: 1, borderColor: colors.warning + '40', marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ color: colors.warning, fontWeight: '600' }}>Panel Admin</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.warning} />
+            </LiftCard>
           </TouchableOpacity>
         )}
 
         {/* Links */}
-        {[
-          { name: 'FAQ', screen: 'FAQ' },
-          { name: 'Kebijakan Privasi', screen: 'Privacy' },
-          { name: 'Kebijakan Cookie', screen: 'Cookie' },
-          { name: 'Syarat & Ketentuan', screen: 'Terms' },
-        ].map((link, i) => (
-          <TouchableOpacity key={i} onPress={() => navigation.navigate(link.screen)}
-            style={{ padding: 14, borderRadius: 8, marginBottom: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ color: colors.text, fontSize: 14 }}>{link.name}</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.muted} />
-          </TouchableOpacity>
-        ))}
+        <LiftCard style={{ borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 16, overflow: 'hidden' }}>
+          {[
+            { name: 'FAQ', screen: 'FAQ' },
+            { name: 'Kebijakan Privasi', screen: 'Privacy' },
+            { name: 'Kebijakan Cookie', screen: 'Cookie' },
+            { name: 'Syarat & Ketentuan', screen: 'Terms' },
+            { name: 'Tentang Aplikasi', screen: 'About' },
+          ].map((link, i) => (
+            <TouchableOpacity key={i} onPress={() => navigation.navigate(link.screen)}
+              style={{ padding: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.border }}>
+              <Text style={{ color: colors.text, fontSize: 14 }}>{link.name}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+            </TouchableOpacity>
+          ))}
+        </LiftCard>
 
         {/* Logout */}
-        <TouchableOpacity onPress={handleLogout}
-          style={{ padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.error, alignItems: 'center', marginTop: 16 }}>
-          <Text style={{ color: colors.error, fontWeight: '600' }}>Keluar</Text>
-        </TouchableOpacity>
+        <Button label="Keluar" variant="danger" fullWidth onPress={handleLogout} />
 
         <Text style={{ textAlign: 'center', color: colors.muted, fontSize: 12, marginTop: 20 }}>AutoClipper v1.0.0</Text>
+      </PageContainer>
       </ScrollView>
     </View>
   );

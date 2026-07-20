@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Animated, StyleSheet, Platform, Easing } from 'react-native';
+import { View, Text, TextInput, ScrollView, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { Header } from '../components/Header';
 import { getClip, updateClip } from '../services/api';
 import { SkeletonLoader } from '../components/SkeletonLoader';
+import { PageContainer } from '../components/PageContainer';
+import { LiftCard } from '../components/LiftCard';
+import { Button } from '../components/Button';
 
 const ANIM_DURATION = 500;
 
@@ -18,7 +21,7 @@ export default function EditClipScreen({ route, navigation }: any) {
   const [subtitle, setSubtitle] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const fadeAnim = useRef(new Animated.Value(0)).current; // For fade-in effect
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const loadClip = useCallback(async () => {
     try {
@@ -41,16 +44,23 @@ export default function EditClipScreen({ route, navigation }: any) {
     loadClip();
   }, [loadClip]);
 
+  const startNum = parseInt(startTime || '0', 10);
+  const endNum = parseInt(endTime || '0', 10);
+  const rangeInvalid = !isNaN(startNum) && !isNaN(endNum) && endNum <= startNum;
+
   const handleSave = async () => {
+    if (rangeInvalid) {
+      alert('Waktu selesai harus lebih besar dari waktu mulai');
+      return;
+    }
     setSaving(true);
     try {
       await updateClip(clipId, {
-        title: title,
-        start: parseInt(startTime),
-        end: parseInt(endTime),
-        subtitle: subtitle,
+        title,
+        start: startNum,
+        end: endNum,
+        subtitle,
       });
-      alert('Perubahan disimpan!');
       navigation.goBack();
     } catch (e) {
       console.error('Error saving clip:', e);
@@ -58,11 +68,6 @@ export default function EditClipScreen({ route, navigation }: any) {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleApplyTimeline = () => {
-    // Logic to apply timeline changes to video preview, not implemented in this mock
-    alert('Timeline diterapkan!');
   };
 
   const inputStyle = (hasError = false) => ({
@@ -101,146 +106,82 @@ export default function EditClipScreen({ route, navigation }: any) {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Header showBack title="Edit Klip" />
-      <Animated.ScrollView style={{ flex: 1, padding: 16, opacity: fadeAnim }}>
-        {/* Preview Section */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Preview</Text>
-          <View style={[styles.videoPlaceholder, { backgroundColor: isDark ? colors.card : '#f1f5f9' }]}>
-            <Ionicons name="film-outline" size={48} color={colors.muted} />
-            <Text style={{ color: colors.muted, marginTop: 8 }}>Preview Video</Text>
-          </View>
-        </View>
+      <Animated.ScrollView style={{ flex: 1, opacity: fadeAnim }} contentContainerStyle={{ padding: 16 }}>
+        <PageContainer maxWidth={640}>
 
-        {/* Timeline Section */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Timeline</Text>
-          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Mulai (detik)</Text>
-              <TextInput
-                value={startTime}
-                onChangeText={(text) => setStartTime(text.replace(/[^0-9]/g, ''))}
-                placeholder="0"
-                placeholderTextColor={colors.muted}
-                keyboardType="numeric"
-                style={inputStyle()}
-              />
+          {/* Preview */}
+          <LiftCard style={{ padding: 16, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 16 }}>
+            <Text style={{ fontWeight: '700', color: colors.text, marginBottom: 12, fontSize: 16 }}>Preview</Text>
+            <View style={{ height: 200, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#0f0f0f' : '#f1f5f9' }}>
+              <Ionicons name="film-outline" size={48} color={colors.muted} />
+              <Text style={{ color: colors.muted, marginTop: 8 }}>Preview Video</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Selesai (detik)</Text>
-              <TextInput
-                value={endTime}
-                onChangeText={(text) => setEndTime(text.replace(/[^0-9]/g, ''))}
-                placeholder="60"
-                placeholderTextColor={colors.muted}
-                keyboardType="numeric"
-                style={inputStyle()}
-              />
+          </LiftCard>
+
+          {/* Timeline */}
+          <LiftCard style={{ padding: 16, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 16 }}>
+            <Text style={{ fontWeight: '700', color: colors.text, marginBottom: 12, fontSize: 16 }}>Timeline</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.muted, fontSize: 13, marginBottom: 6 }}>Mulai (detik)</Text>
+                <TextInput
+                  value={startTime}
+                  onChangeText={(text) => setStartTime(text.replace(/[^0-9]/g, ''))}
+                  placeholder="0"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="numeric"
+                  style={inputStyle(rangeInvalid)}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.muted, fontSize: 13, marginBottom: 6 }}>Selesai (detik)</Text>
+                <TextInput
+                  value={endTime}
+                  onChangeText={(text) => setEndTime(text.replace(/[^0-9]/g, ''))}
+                  placeholder="60"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="numeric"
+                  style={inputStyle(rangeInvalid)}
+                />
+              </View>
             </View>
-          </View>
-          <TouchableOpacity onPress={handleApplyTimeline} style={styles.applyButton}>
-            <Text style={styles.applyButtonText}>Terapkan Timeline</Text>
-          </TouchableOpacity>
-        </View>
+            {rangeInvalid && (
+              <Text style={{ color: colors.error, fontSize: 12, marginTop: 4 }}>
+                Waktu selesai harus lebih besar dari waktu mulai.
+              </Text>
+            )}
+          </LiftCard>
 
-        {/* Metadata Section */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Judul & Subtitle</Text>
-          <TextInput
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Judul klip"
-            placeholderTextColor={colors.muted}
-            style={inputStyle()}
-          />
-          <TextInput
-            value={subtitle}
-            onChangeText={setSubtitle}
-            placeholder="Edit teks subtitle..."
-            placeholderTextColor={colors.muted}
-            multiline
-            numberOfLines={4}
-            style={[inputStyle(), { minHeight: 100, textAlignVertical: 'top' }]}
-          />
-        </View>
+          {/* Metadata */}
+          <LiftCard style={{ padding: 16, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 16 }}>
+            <Text style={{ fontWeight: '700', color: colors.text, marginBottom: 12, fontSize: 16 }}>Judul & Subtitle</Text>
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Judul klip"
+              placeholderTextColor={colors.muted}
+              style={inputStyle()}
+            />
+            <TextInput
+              value={subtitle}
+              onChangeText={setSubtitle}
+              placeholder="Edit teks subtitle..."
+              placeholderTextColor={colors.muted}
+              multiline
+              numberOfLines={4}
+              style={[inputStyle(), { minHeight: 100, textAlignVertical: 'top' }]}
+            />
+          </LiftCard>
 
-        <TouchableOpacity
-          onPress={handleSave}
-          disabled={saving}
-          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-        >
-          <Text style={styles.saveButtonText}>
-            {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
-          </Text>
-        </TouchableOpacity>
+          <Button
+            label={saving ? 'Menyimpan...' : 'Simpan Perubahan'}
+            loading={saving}
+            disabled={rangeInvalid}
+            fullWidth
+            onPress={handleSave}
+          />
+        </PageContainer>
       </Animated.ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  sectionContainer: {
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#1E1E1E',
-    borderWidth: 1,
-    borderColor: '#333',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  sectionTitle: {
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 12,
-    fontSize: 18,
-  },
-  videoPlaceholder: {
-    height: 200,
-    backgroundColor: '#2A2A2A',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inputLabel: {
-    color: '#BBBBBB',
-    fontSize: 13,
-    marginBottom: 6,
-  },
-  applyButton: {
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: '#007AFF',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  applyButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  saveButton: {
-    backgroundColor: '#007AFF',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 24,
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#A0A0A0',
-    shadowColor: 'transparent',
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-});

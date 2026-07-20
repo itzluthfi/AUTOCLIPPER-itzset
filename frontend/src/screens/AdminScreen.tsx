@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, TextInput, RefreshControl, Ac
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { SkeletonLoader } from '../components/SkeletonLoader';
+import { PageContainer } from '../components/PageContainer';
 
 import { API_BASE } from '../services/api';
 
@@ -92,7 +93,7 @@ export default function AdminScreen({ navigation }: any) {
               backgroundColor: colors.primary,
             }}>
             <Ionicons name="add-circle-outline" size={14} color="#fff" />
-            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>🚀 Buat Clip</Text>
+            <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Buat Clip</Text>
           </TouchableOpacity>
           {/* Main App Link */}
           <TouchableOpacity onPress={() => navigation.navigate('MainTabs')}
@@ -175,6 +176,7 @@ function DashboardTab({ colors, isDark, navigation }: any) {
 
   return (
     <ScrollView style={{ flex: 1, padding: 16 }} refreshControl={<RefreshControl refreshing={false} onRefresh={fetchStats} />}>
+      <PageContainer maxWidth={880}>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
         {cards.map((item, i) => (
           <View key={i} style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}>
@@ -199,6 +201,7 @@ function DashboardTab({ colors, isDark, navigation }: any) {
         </Text>
         <AdminTestClipForm colors={colors} isDark={isDark} navigation={navigation} />
       </View>
+      </PageContainer>
     </ScrollView>
   );
 }
@@ -351,6 +354,7 @@ function UsersTab({ colors, isDark }: any) {
 
   return (
     <ScrollView style={{ flex: 1, padding: 16 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchUsers} />}>
+      <PageContainer maxWidth={880}>
       {/* Create User Button */}
       <TouchableOpacity onPress={() => { setShowCreate(!showCreate); setCreatedUser(null); }}
         style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, padding: 12, borderRadius: 10, backgroundColor: colors.primary + '20', borderWidth: 1, borderColor: colors.primary + '40' }}>
@@ -427,6 +431,7 @@ function UsersTab({ colors, isDark }: any) {
           </View>
         </View>
       ))}
+      </PageContainer>
     </ScrollView>
   );
 }
@@ -448,6 +453,7 @@ function QueueTab({ colors, isDark }: any) {
 
   return (
     <ScrollView style={{ flex: 1, padding: 16 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchQueue} />}>
+      <PageContainer maxWidth={880}>
       <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 12, fontSize: 15 }}>
         Antrian Proses ({queue.length})
       </Text>
@@ -474,6 +480,7 @@ function QueueTab({ colors, isDark }: any) {
           </View>
         ))
       )}
+      </PageContainer>
     </ScrollView>
   );
 }
@@ -503,7 +510,7 @@ function VideosTab({ colors, isDark }: any) {
     setExpandedVideoId(videoId);
     setClipsLoading(true);
     try {
-      const data = await apiGet(`/videos/${videoId}`);
+      const data = await apiGet(`/admin/videos/${videoId}`);
       setClips(data.clips || []);
     } catch (e: any) {
       alert('Gagal memuat klip video');
@@ -530,6 +537,7 @@ function VideosTab({ colors, isDark }: any) {
 
   return (
     <ScrollView style={{ flex: 1, padding: 16 }} refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchVideos} />}>
+      <PageContainer maxWidth={880}>
       <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 12, fontSize: 15 }}>
         Semua Video ({videos.length})
       </Text>
@@ -600,6 +608,7 @@ function VideosTab({ colors, isDark }: any) {
           );
         })
       )}
+      </PageContainer>
     </ScrollView>
   );
 }
@@ -647,14 +656,21 @@ function SystemTab({ colors, isDark }: any) {
   if (loading) return <View style={{ padding: 16 }}><SkeletonLoader height={60} /></View>;
   if (!sys) return null;
 
+  // psutil opsional di server — cpu/memory bisa null; tampilkan "N/A" alih-alih "null%"
+  const hasCpuMem = typeof sys.cpu_percent === 'number' && typeof sys.memory_percent === 'number';
   const items = [
-    { label: 'CPU', value: sys.cpu_percent + '%', color: sys.cpu_percent > 80 ? (colors.error||'red') : (colors.success||'green') },
-    { label: 'RAM', value: sys.memory_used_gb + 'GB / ' + sys.memory_total_gb + 'GB (' + sys.memory_percent + '%)', color: sys.memory_percent > 80 ? (colors.error||'red') : (colors.success||'green') },
-    { label: 'Disk', value: sys.disk_used_gb + 'GB / ' + sys.disk_total_gb + 'GB (' + sys.disk_percent.toFixed(1) + '%)', color: sys.disk_percent > 85 ? (colors.error||'red') : (colors.warning||'orange') },
+    ...(hasCpuMem ? [
+      { label: 'CPU', pct: sys.cpu_percent, value: sys.cpu_percent.toFixed(0) + '%', color: sys.cpu_percent > 80 ? colors.error : colors.success },
+      { label: 'RAM', pct: sys.memory_percent, value: sys.memory_used_gb + 'GB / ' + sys.memory_total_gb + 'GB (' + sys.memory_percent.toFixed(0) + '%)', color: sys.memory_percent > 80 ? colors.error : colors.success },
+    ] : [
+      { label: 'CPU / RAM', pct: 0, value: 'Tidak tersedia (psutil belum terpasang di server)', color: colors.muted },
+    ]),
+    { label: 'Disk', pct: sys.disk_percent, value: sys.disk_used_gb + 'GB / ' + sys.disk_total_gb + 'GB (' + sys.disk_percent.toFixed(1) + '%)', color: sys.disk_percent > 85 ? colors.error : colors.warning },
   ];
 
   return (
     <ScrollView style={{ flex: 1, padding: 16 }}>
+      <PageContainer maxWidth={720}>
       <Text style={{ fontWeight: '600', color: colors.text, marginBottom: 12, fontSize: 15 }}>Sistem Server</Text>
       {items.map((item, i) => (
         <View key={i} style={{ padding: 14, borderRadius: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 8 }}>
@@ -664,7 +680,7 @@ function SystemTab({ colors, isDark }: any) {
           </View>
           <View style={{ height: 6, borderRadius: 3, backgroundColor: isDark ? '#2a2a2a' : '#e2e8f0', overflow: 'hidden' }}>
             <View style={{
-              width: (item.label === 'CPU' ? sys.cpu_percent + '%' : item.label === 'RAM' ? sys.memory_percent + '%' : sys.disk_percent.toFixed(1) + '%') as any,
+              width: `${Math.min(100, Math.max(0, item.pct))}%`,
               height: '100%', borderRadius: 3, backgroundColor: item.color,
             }} />
           </View>
@@ -760,6 +776,7 @@ function SystemTab({ colors, isDark }: any) {
         </TouchableOpacity>
 
       </View>
+      </PageContainer>
     </ScrollView>
   );
 }

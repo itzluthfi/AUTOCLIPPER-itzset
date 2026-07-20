@@ -93,9 +93,18 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
             await session.commit()
 
     try:
+        # 0. Ambil cookie pengguna lebih dulu (dipakai untuk metadata & download —
+        # video privat/age-restricted butuh cookie sejak pengambilan info juga).
+        user_cookie_path = None
+        async with session_factory() as session:
+            res = await session.execute(select(User).where(User.id == user_id))
+            usr = res.scalar_one_or_none()
+            if usr and usr.cookie_path and os.path.exists(usr.cookie_path):
+                user_cookie_path = usr.cookie_path
+
         # 1. Info video
         await set_state(status="downloading", progress=5, step_log="[1/5] Inisialisasi antrean video & mengambil metadata YouTube...")
-        info = await get_video_info(youtube_url)
+        info = await get_video_info(youtube_url, cookie_path=user_cookie_path)
         async with session_factory() as session:
             result = await session.execute(select(Video).where(Video.id == video_id))
             video = result.scalar_one_or_none()
@@ -109,23 +118,15 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                 video.current_step_log = "[1/5] Metadata YouTube terverifikasi & memulai unduhan..."
                 await session.commit()
 
-        # 2. Download (dengan cookie pengguna jika tersedia)
-        user_cookie_path = None
-        async with session_factory() as session:
-            res = await session.execute(select(User).where(User.id == user_id))
-            usr = res.scalar_one_or_none()
-            if usr and usr.cookie_path and os.path.exists(usr.cookie_path):
-                user_cookie_path = usr.cookie_path
-
         await set_state(status="downloading", progress=15, step_log="[2/5] Mengunduh stream video 1080p & file subtitle...")
-        video_path = await download_video(youtube_url, str(video_id), cookie_path=user_cookie_path)
+        video_path = await download_video(youtube_url, str(video_id), cookie_path=user_cookie_path, sub_lang=sub_lang)
         if not video_path:
             raise Exception("Gagal mengunduh video dari YouTube")
 
         await set_state(status="subtitling", progress=25, step_log="[3/5] Mengurai percakapan subtitle & memindai audio peak volume...")
 
         # 3. Subtitle / transcript & audio peak detection
-        sub_path = await extract_subtitles(video_path, download_dir)
+        sub_path = await extract_subtitles(video_path, download_dir, sub_lang=sub_lang)
         if not sub_path:
             sub_path = await transcribe_audio(video_path, download_dir)
         transcript = await parse_subtitle_to_text(sub_path or "")
@@ -207,7 +208,7 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                 logger.error(f"Failed to generate thumbnail: {e}")
 
             clip_results.append({
-                "clip_path": clip_path,
+                "path": clip_path,
                 "thumbnail_path": thumb_path,
                 "start": moment["start"],
                 "end": moment["end"],
@@ -257,7 +258,7 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
                         session.add(CreditTransaction(
                             user_id=user_id,
                             amount=1,
-                            transaction_type="refund",
+                            type="refund",
                             description=f"Refund kredit karena gagal memproses video {video_id}",
                         ))
                         await session.commit()

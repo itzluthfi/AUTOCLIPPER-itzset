@@ -168,7 +168,43 @@ async def google_callback(code: str, state: str = None, db: AsyncSession = Depen
         token_data = resp.json()
     if "error" in token_data:
         raise HTTPException(400, token_data.get("error_description", "OAuth failed"))
-    return {"status": "ok", "tokens": token_data}
+
+    # Ambil profil user dari Google, lalu buat/perbarui akun & kembalikan API key
+    # ke frontend — sebelumnya endpoint ini cuma me-return token mentah sebagai JSON,
+    # yang tidak bisa dipakai frontend untuk login (SSO tidak pernah benar-benar selesai).
+    access_token = token_data.get("access_token")
+    async with httpx.AsyncClient() as client:
+        user_info_resp = await client.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        user_info = user_info_resp.json()
+
+    email = user_info.get("email")
+    name = user_info.get("name", "Google User")
+    if not email:
+        raise HTTPException(400, "Gagal mendapatkan email dari Google")
+
+    res = await db.execute(select(User).where(User.email == email))
+    user = res.scalar_one_or_none()
+
+    api_key_raw = generate_api_key()
+    if not user:
+        user = User(
+            email=email,
+            name=name,
+            role="user",
+            api_key=hash_api_key(api_key_raw),
+            credits=5,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    else:
+        user.api_key = hash_api_key(api_key_raw)
+        await db.commit()
+
+    return RedirectResponse(f"{FRONTEND_URL}/?api_key={api_key_raw}")
 
 # ─── Video Endpoints ─────────────────────────────────────────
 
@@ -352,6 +388,22 @@ async def get_video(video_id: int, user: User = Depends(get_current_user), db: A
 @router.get("/health")
 async def health():
     return {"status": "ok", "version": "1.0.0"}
+
+@router.get("/stats/public")
+async def get_public_stats(db: AsyncSession = Depends(get_db)):
+    """Angka agregat asli (bukan fiktif) untuk ditampilkan di landing page."""
+    total_clips = (await db.execute(select(func.count(Clip.id)))).scalar() or 0
+    total_videos = (
+        await db.execute(select(func.count(Video.id)).where(Video.status == "completed"))
+    ).scalar() or 0
+    total_creators = (
+        await db.execute(select(func.count(func.distinct(Video.user_id))))
+    ).scalar() or 0
+    return {
+        "clips_created": total_clips,
+        "videos_processed": total_videos,
+        "creators": total_creators,
+    }
 
 @router.get("/clips/public/featured")
 async def get_featured_clips(db: AsyncSession = Depends(get_db)):
@@ -747,6 +799,35 @@ async def admin_list_videos(admin: User = Depends(require_admin), db: AsyncSessi
         "created_at": v.created_at.isoformat(),
     } for v in videos]
 
+@router.get("/admin/videos/{video_id}")
+async def admin_get_video(video_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    """Detail video + klip untuk video milik siapa pun — dipakai panel admin
+    (endpoint /videos/{id} biasa dibatasi ke pemilik video saja)."""
+    result = await db.execute(select(Video).where(Video.id == video_id))
+    video = result.scalar_one_or_none()
+    if not video:
+        raise HTTPException(404, "Video not found")
+    return {
+        "id": video.id,
+        "title": video.title,
+        "youtube_id": video.youtube_id,
+        "user_id": video.user_id,
+        "user_name": video.user.name if video.user else "N/A",
+        "status": video.status,
+        "clips": [{
+            "id": c.id,
+            "start": c.start_time,
+            "end": c.end_time,
+            "title": c.title,
+            "reason": c.reason,
+            "method": c.method,
+            "tracking": c.tracking_type,
+            "status": c.status,
+            "is_featured": c.is_featured,
+            "youtube_url": c.youtube_url,
+        } for c in video.clips],
+    }
+
 @router.get("/admin/queue")
 async def admin_queue(admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
@@ -1022,7 +1103,10 @@ async def google_app_login():
     client_id = GOOGLE_CLIENT_ID
     if not client_id:
         raise HTTPException(500, "Google Client ID belum diatur")
-    redirect_uri = f"{APP_URL}/api/auth/google/app/callback"
+    # Pakai redirect_uri yang sama dengan flow /auth/google/callback (bukan /app/callback
+    # terpisah) — sebelumnya dua redirect_uri berbeda dipakai padahal biasanya hanya satu
+    # yang terdaftar di Google Cloud Console, menyebabkan error "redirect_uri_mismatch".
+    redirect_uri = GOOGLE_REDIRECT_URI or f"{APP_URL}/api/auth/google/callback"
     state = generate_oauth_state()
 
     url = (
@@ -1045,7 +1129,10 @@ async def google_app_callback(code: str, state: str = None, db: AsyncSession = D
         raise HTTPException(400, "State OAuth tidak valid atau kedaluwarsa")
     client_id = GOOGLE_CLIENT_ID
     client_secret = GOOGLE_CLIENT_SECRET
-    redirect_uri = f"{APP_URL}/api/auth/google/app/callback"
+    # Pakai redirect_uri yang sama dengan flow /auth/google/callback (bukan /app/callback
+    # terpisah) — sebelumnya dua redirect_uri berbeda dipakai padahal biasanya hanya satu
+    # yang terdaftar di Google Cloud Console, menyebabkan error "redirect_uri_mismatch".
+    redirect_uri = GOOGLE_REDIRECT_URI or f"{APP_URL}/api/auth/google/callback"
     
     async with httpx.AsyncClient() as client:
         resp = await client.post("https://oauth2.googleapis.com/token", data={

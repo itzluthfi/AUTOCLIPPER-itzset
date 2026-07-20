@@ -7,10 +7,11 @@ import { useNavigation } from '@react-navigation/native';
 interface Props {
   title?: string;
   showBack?: boolean;
+  showLogo?: boolean;
   rightAction?: React.ReactNode;
 }
 
-export function Header({ title = 'AutoClipper', showBack, rightAction }: Props) {
+export function Header({ title = 'AutoClipper', showBack, showLogo = true, rightAction }: Props) {
   const { colors, isDark, theme, setTheme } = useTheme();
   const navigation = useNavigation();
 
@@ -44,6 +45,15 @@ export function Header({ title = 'AutoClipper', showBack, rightAction }: Props) 
           }} style={{ marginRight: 12, padding: 4 }}>
             <Ionicons name="arrow-back" size={22} color={colors.primary} />
           </TouchableOpacity>
+        )}
+        {showLogo && !showBack && (
+          <View style={{
+            width: 30, height: 30, borderRadius: 9,
+            backgroundColor: colors.primary,
+            alignItems: 'center', justifyContent: 'center', marginRight: 10,
+          }}>
+            <Ionicons name="film" size={16} color="#fff" />
+          </View>
         )}
         <Text style={{
           fontSize: 20,
