@@ -315,26 +315,31 @@ async def clip_video(
     burn_subs = bool(add_subtitle and subtitle_path and os.path.exists(subtitle_path))
     has_voiceover = bool(tts_audio_path)
     is_speaker_split = effective_tracking == "speaker"
-    # filter_complex wajib dipakai jika: split-screen (butuh crop dual-input),
-    # atau ada voiceover (butuh mixing graph audio) — di luar itu -vf tunggal cukup & lebih murah.
-    filter_complex = is_speaker_split or has_voiceover
+    filter_complex = True
 
-    # ── Rantai filter video: dibangun sebagai daftar label bersambung, bukan string-replace,
-    # supaya setiap tahap (crop → subtitle → title) selalu ke-chain walau tahap sebelumnya dilewati.
     video_chain: list[str] = []
-    if is_speaker_split:
-        # Split-Screen Mode: Membagi video landscape menjadi 2 panel atas-bawah (9:16 stacked)
-        video_chain.append(
-            "[0:v]crop=iw/2:ih:0:0,scale=1080:960[vtop];"
-            "[0:v]crop=iw/2:ih:iw/2:0,scale=1080:960[vbot];"
-            "[vtop][vbot]vstack=inputs=2[v0]"
-        )
-        current_label = "v0"
+    
+    # 1. Tahap Freeze Frame / Pause di awal video jika ada Hook Title & TTS
+    # Video di-pause (cloned 1st frame) selama 2.5 detik untuk pembacaan judul oleh TTS
+    if has_voiceover:
+        video_chain.append("[0:v]tpad=start_duration=2.5:start_mode=clone[vfrozen]")
+        current_label = "vfrozen"
     else:
-        simple_filters = ["crop=ih*9/16:ih", "scale=1080:1920"]
+        current_label = "0:v"
+
+    # 2. Tahap Framing / Crop (Split-Screen 2 Orang vs Face Track 9:16)
+    if is_speaker_split:
+        video_chain.append(
+            f"[{current_label}]crop=iw/2:ih:0:0,scale=1080:960[vtop];"
+            f"[{current_label}]crop=iw/2:ih:iw/2:0,scale=1080:960[vbot];"
+            f"[vtop][vbot]vstack=inputs=2[vframe]"
+        )
+        current_label = "vframe"
+    else:
+        video_chain.append(f"[{current_label}]crop=ih*9/16:ih,scale=1080:1920[vframe]")
+        current_label = "vframe"
 
     stage = 0
-
     def _chain_filter(filter_str: str):
         nonlocal stage, current_label
         stage += 1
@@ -342,39 +347,30 @@ async def clip_video(
         video_chain.append(f"[{current_label}]{filter_str}[{next_label}]")
         current_label = next_label
 
+    # 3. Subtitle Viral Preset (TikTok Bold Yellow + Stroke & Shadow)
     if burn_subs:
         escaped = subtitle_path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
-        sub_style = ":force_style='FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2'"
+        # Preset Subtitle TikTok Viral (Bold Yellow, Stroke Hitam, Padding Bawah Pop-up)
+        sub_style = ":force_style='FontName=Arial,FontSize=22,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=3,Outline=2,Bold=1,MarginV=45,Alignment=2'"
         sub_filter = f"subtitles='{escaped}'{sub_style}"
-        if is_speaker_split:
-            _chain_filter(sub_filter)
-        else:
-            simple_filters.append(sub_filter)
+        _chain_filter(sub_filter)
 
+    # 4. Title Card Text Overlay selama pause awal (detik 0 - 2.8)
     if title:
         safe_title = title.replace("'", "").replace(":", " ").replace("\\", "")[:45]
-        title_overlay = f"drawtext=text='{safe_title}':x=(w-text_w)/2:y=h*0.12:fontsize=42:fontcolor=yellow:box=1:boxcolor=black@0.7:boxborderw=10:enable='between(t,0,3)'"
-        if is_speaker_split:
-            _chain_filter(title_overlay)
-        else:
-            simple_filters.append(title_overlay)
+        title_overlay = f"drawtext=text='{safe_title}':x=(w-text_w)/2:y=h*0.16:fontsize=44:fontcolor=yellow:box=1:boxcolor=black@0.8:boxborderw=12:enable='between(t,0,2.8)'"
+        _chain_filter(title_overlay)
 
-    if is_speaker_split:
-        video_out_label = current_label
-    elif filter_complex:
-        # Non-split tapi butuh filter_complex karena ada voiceover: bungkus filter -vf biasa
-        # jadi satu node filter_complex bernama [v0] supaya bisa dipetakan bareng audio mix.
-        video_chain.append(f"[0:v]{','.join(simple_filters)}[v0]")
-        video_out_label = "v0"
+    video_out_label = current_label
 
-    # ── Rantai filter audio: mixing voiceover hook (3 detik pertama) dengan audio asli.
+    # ── Rantai filter audio: Pause audio asli 2.5s selama TTS voiceover membaca judul ──
     audio_chain: list[str] = []
     audio_out_label = None
     if has_voiceover:
-        # Input audio asli sedikit diredam selama hook, voiceover terdengar jelas di depan.
-        audio_chain.append("[0:a]volume=0.55:enable='between(t,0,3)',volume=1.0:enable='gte(t,3)'[aorig]")
-        audio_chain.append("[1:a]volume=1.6,apad[avoice]")
-        audio_chain.append("[aorig][avoice]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]")
+        # Tunda audio asli video selama 2.5 detik (2500ms) agar pas dengan pause frame
+        audio_chain.append("[0:a]adelay=2500|2500[a_delayed]")
+        audio_chain.append("[1:a]volume=1.8[avoice]")
+        audio_chain.append("[a_delayed][avoice]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[aout]")
         audio_out_label = "aout"
 
     if burn_subs:
@@ -385,17 +381,14 @@ async def clip_video(
     cmd = [get_ffmpeg_cmd(), *seek_args]
     if has_voiceover:
         cmd.extend(["-i", tts_audio_path])
-    cmd.extend(["-t", str(min(duration, 60))])
+    cmd.extend(["-t", str(min(duration + (2.5 if has_voiceover else 0), 65))])
 
-    if filter_complex:
-        full_graph = ";".join(video_chain + audio_chain)
-        cmd.extend(["-filter_complex", full_graph, "-map", f"[{video_out_label}]"])
-        if audio_out_label:
-            cmd.extend(["-map", f"[{audio_out_label}]"])
-        else:
-            cmd.extend(["-map", "0:a?"])
+    full_graph = ";".join(video_chain + audio_chain)
+    cmd.extend(["-filter_complex", full_graph, "-map", f"[{video_out_label}]"])
+    if audio_out_label:
+        cmd.extend(["-map", f"[{audio_out_label}]"])
     else:
-        cmd.extend(["-vf", ",".join(simple_filters)])
+        cmd.extend(["-map", "0:a?"])
 
     # High Quality Render Parameters (-crf 19 untuk 1080p jernih, audio 192k)
     cmd.extend([

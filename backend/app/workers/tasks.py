@@ -38,27 +38,52 @@ def _make_session_factory():
     return engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-def _clamp_moments(moments: list, duration: int) -> list:
-    """Validasi hasil AI/heuristik: pastikan rentang masuk akal dan di dalam durasi video."""
+def _clamp_moments(moments: list, duration: int, num_clips: int = 5) -> list:
+    """Validasi hasil AI/heuristik: pastikan rentang masuk akal, unik, dan di dalam durasi video."""
     cleaned = []
+    seen_starts = []
     for m in moments:
         try:
             start = max(0.0, float(m.get("start", 0)))
             end = float(m.get("end", start + 45))
         except (TypeError, ValueError):
             continue
+
+        # Filter jika ada klip dengan selisih start < 15 detik (tumpang tindih / duplikat)
+        if any(abs(start - s) < 15 for s in seen_starts):
+            continue
+
         if duration and duration > 0:
             start = min(start, max(0, duration - 15))
             end = min(end, duration)
+
         if end - start < 10:
             end = start + 30
             if duration and duration > 0:
                 end = min(end, duration)
+
         if end - start < 5:
             continue
+
         end = min(end, start + 90)
+        seen_starts.append(start)
         cleaned.append({"start": start, "end": end, "reason": str(m.get("reason", ""))[:500]})
-    return cleaned[:5]
+
+    # Jika setelah pembersihan klip belum mencapai num_clips, isi dengan rentang unik terdistribusi merata
+    if len(cleaned) < num_clips:
+        dur = duration if duration and duration > 30 else 300
+        clip_len = 45
+        step = max(clip_len + 5, (dur - 20) // max(1, num_clips))
+        for i in range(num_clips):
+            if len(cleaned) >= num_clips:
+                break
+            st = 10 + i * step
+            ed = min(dur - 5, st + clip_len)
+            if not any(abs(st - s) < 15 for s in seen_starts):
+                seen_starts.append(st)
+                cleaned.append({"start": st, "end": ed, "reason": f"Segmen Klip #{len(cleaned)+1}"})
+
+    return cleaned[:num_clips]
 
 
 async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
@@ -152,10 +177,10 @@ async def _process_video_async(video_id: int, youtube_url: str, user_id: int,
         else:
             moments = _fallback_heuristic(transcript, duration, num_clips)
             
-        moments = _clamp_moments(moments, duration)
+        moments = _clamp_moments(moments, duration, num_clips)
         if not moments:
             moments = _clamp_moments(
-                [{"start": 10, "end": 60, "reason": "Pembukaan video"}], duration
+                [{"start": 10, "end": 60, "reason": "Pembukaan video"}], duration, num_clips
             ) or [{"start": 0, "end": min(45, duration or 45), "reason": "Pembukaan video"}]
 
         # 5. Clipping & Dynamic Framing

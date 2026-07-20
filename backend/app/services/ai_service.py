@@ -189,6 +189,9 @@ PENTING WAJIB:
 def _fallback_heuristic(transcript: str, duration: int = 0, num_clips: int = 5) -> list[dict]:
     """Heuristic: segmen berdasarkan kata kunci atau interval waktu video yang merata hingga num_clips (max 10)"""
     num_clips = max(1, min(10, num_clips))
+    dur = duration if duration and duration > 30 else 300
+    clip_len = 45
+
     keywords = ["best", "amazing", "wow", "important", "watch this", "wait for it",
                 "let me show", "check this", "first", "finally", "kesimpulan", "penting",
                 "menarik", "luar biasa", "kunci", "utama", "tips", "rahasia"]
@@ -208,29 +211,33 @@ def _fallback_heuristic(transcript: str, duration: int = 0, num_clips: int = 5) 
     segments.sort(key=lambda x: x["score"], reverse=True)
 
     moments = []
-    for seg in segments[:num_clips]:
-        start = max(0, seg["index"] * 5)
-        moments.append({
-            "start": start,
-            "end": start + 45,
-            "reason": f"Momen menarik: {seg['text'][:50]}..."
-        })
+    seen_starts = []
+    for seg in segments:
+        if len(moments) >= num_clips:
+            break
+        st = max(0, seg["index"] * 5)
+        if not any(abs(st - s) < 15 for s in seen_starts):
+            seen_starts.append(st)
+            moments.append({
+                "start": st,
+                "end": min(dur, st + clip_len),
+                "reason": f"Momen menarik: {seg['text'][:50]}..."
+            })
 
-    # Jika jumlah momen kurang dari num_clips, bagi durasi video secara merata menjadi num_clips segmen
+    # Jika jumlah momen kurang dari num_clips, bagi durasi video secara merata menjadi num_clips segmen unik
     if len(moments) < num_clips:
-        dur = max(duration, 300)
-        clip_len = 45
-        step = max(clip_len + 10, (dur - 30) // max(1, num_clips))
-        
-        moments = []
+        step = max(clip_len + 5, (dur - 20) // max(1, num_clips))
         for i in range(num_clips):
-            start = 10 + i * step
-            end = min(dur - 5, start + clip_len)
-            if start < dur - 10:
+            if len(moments) >= num_clips:
+                break
+            st = 10 + i * step
+            ed = min(dur - 5, st + clip_len)
+            if not any(abs(st - s) < 15 for s in seen_starts):
+                seen_starts.append(st)
                 moments.append({
-                    "start": start,
-                    "end": end,
-                    "reason": f"Segment Momen Highlight #{i + 1}"
+                    "start": st,
+                    "end": ed,
+                    "reason": f"Segmen Momen Highlight #{i + 1}"
                 })
 
     return moments[:num_clips]
